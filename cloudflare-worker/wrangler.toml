@@ -1,0 +1,15 @@
+name            = "tdx-proxy"
+main            = "worker.js"
+compatibility_date = "2024-11-01"
+
+# 設定 Secrets（不寫在這裡，用指令設定）：
+#   wrangler secret put TDX_CLIENT_ID
+#   wrangler secret put TDX_CLIENT_SECRET
+#
+# 部署：
+#   wrangler deploy
+#
+# 本地測試（需要 .dev.vars 檔案）：
+#   echo 'TDX_CLIENT_ID=你的ID'     >> .dev.vars
+#   echo 'TDX_CLIENT_SECRET=你的密鑰' >> .dev.vars
+#   wrangler dev

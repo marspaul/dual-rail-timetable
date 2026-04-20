@@ -1,0 +1,1269 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+<title>雙鐵時刻表</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --c-bg:        #0E1A2B;
+    --c-surface:   #142339;
+    --c-surface-2: #1B2D48;
+    --c-surface-3: #223454;
+    --c-line:      #233a5e;
+    --c-text:      #EAF1FB;
+    --c-text-dim:  #8AA0BD;
+    --c-accent:    #FF8C42;
+    --c-accent-2:  #FFB661;
+    --c-tra:       #1F6FB2;
+    --c-thsr:      #E8A020;
+    --c-success:   #4ADE80;
+    --c-danger:    #F87171;
+    --shadow-1: 0 4px 16px rgba(0,0,0,0.25);
+    --shadow-2: 0 12px 40px rgba(0,0,0,0.4);
+    --radius-m: 16px;
+    --radius-l: 22px;
+    --font: 'Noto Sans TC', system-ui, sans-serif;
+    --mono: 'JetBrains Mono', ui-monospace, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; }
+  body {
+    font-family: var(--font);
+    background:
+      radial-gradient(1200px 600px at 80% -10%, rgba(255,140,66,0.07), transparent 60%),
+      radial-gradient(900px 500px at -10% 110%, rgba(31,111,178,0.16), transparent 60%),
+      var(--c-bg);
+    color: var(--c-text);
+    min-height: 100vh;
+    display: flex;
+    justify-content: center;
+    overflow-x: hidden;
+  }
+  .app {
+    width: 100%; max-width: 480px; min-height: 100vh;
+    background: linear-gradient(180deg, rgba(20,35,57,0.55) 0%, rgba(14,26,43,0.97) 100%);
+    backdrop-filter: blur(8px);
+    display: flex; flex-direction: column;
+    box-shadow: var(--shadow-2);
+  }
+
+  /* === Header === */
+  header { padding: 28px 22px 16px; display: flex; align-items: flex-end; justify-content: space-between; }
+  .brand .title { font-size: 26px; font-weight: 900; letter-spacing: 1px; background: linear-gradient(135deg, #fff 0%, var(--c-accent-2) 100%); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .brand .subtitle { font-size: 11px; letter-spacing: 4px; color: var(--c-text-dim); text-transform: uppercase; font-family: var(--mono); }
+  .clock { font-family: var(--mono); font-size: 14px; color: var(--c-accent-2); background: rgba(255,140,66,0.08); padding: 6px 10px; border-radius: 8px; border: 1px solid rgba(255,140,66,0.2); }
+
+  /* === Tabs === */
+  .tabs { margin: 8px 22px 0; background: var(--c-surface); border-radius: var(--radius-l); padding: 5px; display: grid; grid-template-columns: 1fr 1fr; gap: 4px; border: 1px solid var(--c-line); }
+  .tab { padding: 12px 8px; text-align: center; border-radius: 18px; font-size: 14px; font-weight: 700; color: var(--c-text-dim); cursor: pointer; transition: all .25s ease; user-select: none; }
+  .tab.active[data-tab="tra"]      { background: var(--c-tra); color: #fff; box-shadow: var(--shadow-1); }
+  .tab.active[data-tab="thsr"]     { background: var(--c-thsr); color: #1a1000; box-shadow: var(--shadow-1); }
+  .tab.active[data-tab="transfer"] { background: linear-gradient(135deg, var(--c-tra), var(--c-thsr)); color: #fff; box-shadow: var(--shadow-1); }
+
+  /* === Search Card === */
+  .search-card { margin: 18px 22px 0; background: var(--c-surface); border-radius: var(--radius-l); padding: 18px; border: 1px solid var(--c-line); box-shadow: var(--shadow-1); }
+  .station-row { display: grid; grid-template-columns: 1fr 44px 1fr; gap: 8px; align-items: flex-end; }
+  .station-label { font-size: 10px; color: var(--c-text-dim); letter-spacing: 2px; text-transform: uppercase; margin-bottom: 6px; font-family: var(--mono); }
+
+  .station-btn {
+    width: 100%; background: var(--c-surface-2); border: 1px solid var(--c-line); border-radius: var(--radius-m);
+    padding: 10px 14px; color: var(--c-text); text-align: left; cursor: pointer;
+    transition: border-color .2s, background .2s; min-height: 62px;
+    display: flex; flex-direction: column; justify-content: center;
+  }
+  .station-btn:focus { border-color: var(--c-accent); background: rgba(255,140,66,0.04); outline: none; }
+  .station-btn .county { font-size: 10px; color: var(--c-text-dim); font-family: var(--mono); margin-bottom: 3px; letter-spacing: 1px; min-height: 14px; }
+  .station-btn .name   { font-size: 16px; font-weight: 700; }
+  .station-btn.empty .county { color: transparent; }
+  .station-btn.empty .name   { font-size: 14px; font-weight: 400; color: var(--c-text-dim); }
+
+  .swap-btn { width: 44px; height: 44px; border-radius: 50%; background: var(--c-accent); color: #fff; display: flex; align-items: center; justify-content: center; cursor: pointer; border: none; transition: transform .4s cubic-bezier(.4,1.6,.5,1), background .2s; box-shadow: 0 4px 12px rgba(255,140,66,0.3); flex-shrink: 0; }
+  .swap-btn:hover { background: var(--c-accent-2); }
+  .swap-btn.spin { transform: rotate(180deg); }
+
+  .datetime-row { margin-top: 14px; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .dt-cell { background: var(--c-surface-2); padding: 10px 14px; border-radius: var(--radius-m); border: 1px solid var(--c-line); }
+  .dt-cell label { display: block; font-size: 10px; color: var(--c-text-dim); letter-spacing: 2px; font-family: var(--mono); margin-bottom: 4px; }
+  .dt-cell input { background: transparent; border: none; color: var(--c-text); font-size: 15px; width: 100%; outline: none; font-family: var(--mono); }
+  .dt-cell input::-webkit-calendar-picker-indicator { filter: invert(0.7); cursor: pointer; }
+
+  .search-btn { margin-top: 16px; width: 100%; padding: 16px; border: none; border-radius: var(--radius-m); background: linear-gradient(135deg, var(--c-accent) 0%, #ff6b1a 100%); color: #fff; font-weight: 800; font-size: 16px; letter-spacing: 4px; cursor: pointer; box-shadow: 0 8px 24px rgba(255,107,26,0.35); transition: transform .15s; font-family: var(--font); }
+  .search-btn:active { transform: scale(0.98); }
+
+  /* === Train Type Selector === */
+  .traintype-row { margin-top: 14px; }
+  .type-pills { display: flex; gap: 8px; }
+  .type-pill {
+    flex: 1; padding: 10px 6px; border-radius: var(--radius-m);
+    background: var(--c-surface-2); border: 1px solid var(--c-line);
+    color: var(--c-text-dim); font-size: 13px; font-weight: 600;
+    cursor: pointer; font-family: var(--font);
+    display: flex; align-items: center; justify-content: center; gap: 6px;
+    transition: all .2s;
+  }
+  .type-pill:hover { border-color: var(--c-accent); color: var(--c-text); }
+  .type-pill.active { background: rgba(255,140,66,0.12); border-color: var(--c-accent); color: var(--c-accent-2); }
+  .type-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+  .type-dot.reserved   { background: #60a5fa; }   /* 藍：對號 */
+  .type-dot.unreserved { background: #a3e635; }   /* 綠：非對號 */
+
+  /* === Favorites === */
+  .favorites { margin: 18px 22px 0; }
+  .section-title { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+  .section-title h3 { font-size: 13px; letter-spacing: 3px; color: var(--c-text-dim); font-weight: 700; text-transform: uppercase; font-family: var(--mono); }
+  .fav-list { display: flex; gap: 10px; overflow-x: auto; padding-bottom: 6px; scrollbar-width: none; -webkit-overflow-scrolling: touch; touch-action: pan-x; cursor: grab; user-select: none; }
+  .fav-list::-webkit-scrollbar { display: none; }
+  .fav-list.dragging { cursor: grabbing; }
+  .fav-chip { flex-shrink: 0; background: var(--c-surface); border: 1px solid var(--c-line); padding: 10px 14px; border-radius: 14px; font-size: 13px; cursor: pointer; display: flex; align-items: center; gap: 8px; transition: all .2s; }
+  .fav-chip:hover { border-color: var(--c-accent); }
+  .fav-chip .dot { width: 6px; height: 6px; border-radius: 50%; }
+  .fav-chip.tra .dot  { background: var(--c-tra); }
+  .fav-chip.thsr .dot { background: var(--c-thsr); }
+
+  /* === Results === */
+  .results { margin: 22px 22px 30px; flex: 1; }
+  .results-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+  .results-header h3 { font-size: 13px; letter-spacing: 3px; color: var(--c-text-dim); font-weight: 700; text-transform: uppercase; font-family: var(--mono); }
+  .filter-pills { display: flex; gap: 6px; }
+  .pill { font-size: 11px; padding: 5px 10px; border-radius: 10px; background: var(--c-surface); border: 1px solid var(--c-line); color: var(--c-text-dim); cursor: pointer; transition: all .2s; }
+  .pill.active { background: var(--c-accent); color: #fff; border-color: var(--c-accent); }
+
+  .train-card { background: var(--c-surface); border: 1px solid var(--c-line); border-radius: var(--radius-m); padding: 14px 16px; margin-bottom: 10px; display: grid; grid-template-columns: auto 1fr auto; gap: 14px; align-items: center; cursor: pointer; transition: transform .15s, border-color .2s; position: relative; overflow: hidden; }
+  .train-card::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--c-tra); }
+  .train-card[data-system="thsr"]::before { background: var(--c-thsr); }
+  .train-card:hover { border-color: var(--c-accent); transform: translateY(-1px); }
+
+  .train-no { background: var(--c-surface-2); padding: 8px 10px; border-radius: 10px; text-align: center; min-width: 64px; }
+  .train-no .num  { font-family: var(--mono); font-size: 18px; font-weight: 700; color: var(--c-accent-2); }
+  .train-no .type { font-size: 10px; color: var(--c-text-dim); margin-top: 2px; }
+
+  .train-time { display: flex; align-items: center; gap: 10px; }
+  .time-block { text-align: center; }
+  .time-block .t { font-family: var(--mono); font-size: 18px; font-weight: 700; }
+  .time-block .s  { font-size: 11px; color: var(--c-text-dim); margin-top: 2px; }
+  .duration { text-align: center; flex: 1; }
+  .duration .line { height: 2px; background: linear-gradient(90deg, transparent, var(--c-line), transparent); margin: 6px 4px 4px; position: relative; }
+  .duration .line::after { content: '→'; position: absolute; right: -2px; top: -10px; color: var(--c-text-dim); font-size: 14px; }
+  .duration .min { font-family: var(--mono); font-size: 11px; color: var(--c-text-dim); }
+
+  .train-meta { text-align: right; }
+  .price  { font-family: var(--mono); font-size: 14px; font-weight: 700; color: var(--c-accent); }
+  .status { font-size: 10px; margin-top: 4px; padding: 2px 6px; border-radius: 6px; display: inline-block; }
+  .status.ontime { background: rgba(74,222,128,0.15); color: var(--c-success); }
+  .status.delay  { background: rgba(248,113,113,0.15); color: var(--c-danger); }
+
+  .empty { text-align: center; padding: 40px 20px; color: var(--c-text-dim); font-size: 14px; line-height: 1.8; }
+  .empty .icon { font-size: 40px; opacity: 0.4; margin-bottom: 12px; }
+
+  /* === Bottom Nav === */
+  .bottom-nav { position: sticky; bottom: 0; background: rgba(20,35,57,0.88); backdrop-filter: blur(20px); border-top: 1px solid var(--c-line); display: grid; grid-template-columns: repeat(4, 1fr); padding: 10px 0 calc(10px + env(safe-area-inset-bottom)); }
+  .nav-item { display: flex; flex-direction: column; align-items: center; gap: 4px; color: var(--c-text-dim); font-size: 11px; cursor: pointer; padding: 6px 0; transition: color .2s; }
+  .nav-item.active { color: var(--c-accent); }
+  .nav-item svg { width: 22px; height: 22px; }
+
+  /* === Page switching === */
+  .page.hidden { display: none !important; }
+
+  /* === Add-fav button (results header) === */
+  .add-fav-btn { font-size: 11px; padding: 5px 10px; border-radius: 10px; background: var(--c-surface); border: 1px solid var(--c-line); color: var(--c-text-dim); cursor: pointer; transition: all .2s; white-space: nowrap; font-family: var(--font); }
+  .add-fav-btn.saved { background: rgba(255,182,97,0.15); border-color: var(--c-accent-2); color: var(--c-accent-2); }
+
+  /* === Favorites Management Page === */
+  .fav-page { margin: 18px 22px 30px; flex: 1; }
+  .fav-page-header { font-size: 13px; letter-spacing: 3px; color: var(--c-text-dim); font-weight: 700; text-transform: uppercase; font-family: var(--mono); margin-bottom: 16px; }
+  .fav-manage-item { display: flex; align-items: center; gap: 12px; background: var(--c-surface); border: 1px solid var(--c-line); border-radius: var(--radius-m); padding: 12px 14px; margin-bottom: 8px; }
+  .fav-manage-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .fav-manage-dot.tra  { background: var(--c-tra); }
+  .fav-manage-dot.thsr { background: var(--c-thsr); }
+  .fav-manage-info { flex: 1; }
+  .fav-manage-route { font-size: 14px; font-weight: 600; }
+  .fav-manage-sys { font-size: 10px; color: var(--c-text-dim); font-family: var(--mono); margin-top: 3px; letter-spacing: 1px; }
+  .fav-delete-btn { width: 32px; height: 32px; border: none; background: rgba(248,113,113,0.12); color: var(--c-danger); border-radius: 8px; cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0; transition: background .2s; }
+  .fav-delete-btn:hover { background: rgba(248,113,113,0.25); }
+  .fav-add-from-search { display: flex; align-items: center; gap: 10px; background: rgba(255,140,66,0.06); border: 1px dashed rgba(255,140,66,0.4); border-radius: var(--radius-m); padding: 12px 14px; margin-top: 4px; cursor: pointer; transition: all .2s; }
+  .fav-add-from-search:hover { background: rgba(255,140,66,0.12); border-color: var(--c-accent); }
+  .fav-add-from-search .label { flex: 1; font-size: 14px; color: var(--c-text-dim); }
+  .fav-add-from-search .plus { font-size: 20px; color: var(--c-accent); line-height: 1; }
+  .fav-empty { text-align: center; padding: 40px 20px; color: var(--c-text-dim); font-size: 14px; line-height: 1.8; }
+
+  /* =============================================
+     Station Picker Modal
+     ============================================= */
+  .modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.65); backdrop-filter: blur(4px); display: none; align-items: flex-end; justify-content: center; z-index: 100; }
+  .modal-backdrop.show { display: flex; }
+  .modal { width: 100%; max-width: 480px; background: var(--c-surface); border-radius: 24px 24px 0 0; max-height: 88vh; display: flex; flex-direction: column; animation: slideUp .3s cubic-bezier(.2,.8,.2,1); overflow: hidden; }
+  @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+
+  .modal-header { padding: 16px 20px 0; flex-shrink: 0; }
+  .modal-handle { width: 40px; height: 4px; background: var(--c-line); border-radius: 2px; margin: 0 auto 14px; }
+  .modal-title-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+  .modal-title-row h2 { font-size: 18px; }
+  .system-badge { display: inline-block; padding: 4px 12px; border-radius: 8px; font-size: 11px; font-weight: 700; letter-spacing: 1px; }
+  .system-badge.tra  { background: rgba(31,111,178,0.2); color: var(--c-tra); border: 1px solid rgba(31,111,178,0.4); }
+  .system-badge.thsr { background: rgba(232,160,32,0.2); color: var(--c-thsr); border: 1px solid rgba(232,160,32,0.4); }
+
+  .quick-search-wrap { padding: 0 20px 10px; flex-shrink: 0; }
+  .quick-search { width: 100%; background: var(--c-surface-2); border: 1px solid var(--c-line); padding: 11px 14px; border-radius: 12px; color: var(--c-text); font-size: 14px; outline: none; font-family: var(--font); transition: border-color .2s; }
+  .quick-search:focus { border-color: var(--c-accent); }
+  .quick-search::placeholder { color: var(--c-text-dim); }
+
+  /* Two-panel layout for TRA */
+  .picker-body { display: flex; flex: 1; overflow: hidden; }
+
+  .county-panel { width: 115px; flex-shrink: 0; overflow-y: auto; border-right: 1px solid var(--c-line); scrollbar-width: none; background: rgba(14,26,43,0.4); }
+  .county-panel::-webkit-scrollbar { display: none; }
+  .county-item { padding: 13px 10px 13px 14px; font-size: 13px; cursor: pointer; border-left: 3px solid transparent; color: var(--c-text-dim); line-height: 1.3; transition: background .15s, color .15s; }
+  .county-item:hover { background: var(--c-surface-2); color: var(--c-text); }
+  .county-item.active { background: var(--c-surface-2); color: var(--c-text); font-weight: 700; border-left-color: var(--c-tra); }
+
+  .station-panel { flex: 1; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--c-line) transparent; }
+  .station-panel::-webkit-scrollbar { width: 4px; }
+  .station-panel::-webkit-scrollbar-thumb { background: var(--c-line); border-radius: 2px; }
+
+  .flat-list { flex: 1; overflow-y: auto; }
+
+  .station-item { padding: 14px 18px; cursor: pointer; border-bottom: 1px solid rgba(35,58,94,0.5); transition: background .15s; display: flex; flex-direction: column; gap: 2px; }
+  .station-item:hover { background: var(--c-surface-2); }
+  .station-item .sname { font-size: 15px; font-weight: 500; }
+  .station-item .smeta { font-size: 11px; color: var(--c-text-dim); font-family: var(--mono); }
+
+  /* THSR station item: show city badge */
+  .thsr-item { padding: 14px 18px; cursor: pointer; border-bottom: 1px solid rgba(35,58,94,0.5); transition: background .15s; display: flex; align-items: center; gap: 14px; }
+  .thsr-item:hover { background: var(--c-surface-2); }
+  .thsr-seq { font-family: var(--mono); font-size: 12px; color: var(--c-text-dim); width: 18px; text-align: right; }
+  .thsr-info .sname { font-size: 15px; font-weight: 600; }
+  .thsr-info .smeta { font-size: 11px; color: var(--c-text-dim); font-family: var(--mono); margin-top: 2px; }
+  .thsr-arrow { margin-left: auto; color: var(--c-text-dim); font-size: 18px; }
+
+  /* === Detail Card === */
+  .detail-card { background: var(--c-surface); border: 1px solid var(--c-line); border-radius: var(--radius-m); padding: 18px; margin-top: 12px; display: none; }
+  .detail-card.show { display: block; animation: fadeUp .25s ease; }
+  @keyframes fadeUp { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: translateY(0); } }
+  .stops { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
+  .stop { display: grid; grid-template-columns: 60px 20px 1fr; gap: 10px; align-items: center; }
+  .stop .t { font-family: var(--mono); font-size: 13px; color: var(--c-text-dim); }
+  .stop .marker { width: 10px; height: 10px; border-radius: 50%; border: 2px solid var(--c-accent); margin: 0 auto; position: relative; }
+  .stop:not(:last-child) .marker::after { content: ''; position: absolute; left: 50%; top: 100%; width: 2px; height: 18px; background: var(--c-line); transform: translateX(-50%); }
+  .stop .sname { font-size: 14px; }
+  .stop.endpoint .marker { background: var(--c-accent); }
+
+  /* === Toast === */
+  .toast { position: fixed; top: 20px; left: 50%; transform: translateX(-50%) translateY(-80px); background: var(--c-surface-3); border: 1px solid var(--c-line); padding: 12px 20px; border-radius: 12px; font-size: 13px; z-index: 200; box-shadow: var(--shadow-2); transition: transform .35s cubic-bezier(.2,.9,.3,1.4); white-space: nowrap; }
+  .toast.show { transform: translateX(-50%) translateY(0); }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <header>
+    <div class="brand">
+      <div class="title">雙鐵時刻表</div>
+      <div class="subtitle">TRA × THSR</div>
+    </div>
+    <div class="clock" id="clock">--:--</div>
+  </header>
+
+  <div id="page-home" class="page">
+  <div class="tabs">
+    <div class="tab active" data-tab="tra">台鐵 TRA</div>
+    <div class="tab" data-tab="thsr">高鐵 THSR</div>
+  </div>
+
+  <div class="search-card">
+    <div class="station-row">
+      <div>
+        <div class="station-label">FROM 起站</div>
+        <button class="station-btn empty" id="from-btn">
+          <span class="county">　</span>
+          <span class="name">點選選擇</span>
+        </button>
+      </div>
+      <button class="swap-btn" id="swap-btn" aria-label="交換">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M7 16V4M7 4L3 8M7 4l4 4M17 8v12m0 0l4-4m-4 4l-4-4"/>
+        </svg>
+      </button>
+      <div>
+        <div class="station-label">TO 訖站</div>
+        <button class="station-btn empty" id="to-btn">
+          <span class="county">　</span>
+          <span class="name">點選選擇</span>
+        </button>
+      </div>
+    </div>
+    <div class="datetime-row">
+      <div class="dt-cell"><label>日期 DATE</label><input type="date" id="date-input"></div>
+      <div class="dt-cell"><label>時間 TIME</label><input type="time" id="time-input"></div>
+    </div>
+
+    <!-- 車種選擇（台鐵專用，高鐵時隱藏） -->
+    <div class="traintype-row" id="traintype-row">
+      <div class="station-label" style="margin-bottom:8px;">車種 TRAIN TYPE</div>
+      <div class="type-pills">
+        <button class="type-pill active" data-type="all">全部</button>
+        <button class="type-pill" data-type="reserved">
+          <span class="type-dot reserved"></span>對號
+        </button>
+        <button class="type-pill" data-type="unreserved">
+          <span class="type-dot unreserved"></span>非對號
+        </button>
+      </div>
+    </div>
+
+    <button class="search-btn" id="search-btn">查詢車次</button>
+  </div>
+
+  <div class="favorites">
+    <div class="section-title"><h3>★ 常用路線</h3></div>
+    <div class="fav-list"></div>
+  </div>
+
+  <div class="results">
+    <div class="results-header">
+      <h3 id="results-title">— 查詢結果 —</h3>
+      <div style="display:flex;align-items:center;gap:8px">
+        <button class="add-fav-btn" id="add-fav-btn" style="display:none">☆ 加入常用</button>
+        <div class="filter-pills">
+          <div class="pill active" data-filter="all">全部</div>
+          <div class="pill" data-filter="fast">直達</div>
+        </div>
+      </div>
+    </div>
+    <div id="results-list">
+      <div class="empty"><div class="icon">🚆</div>選擇起訖站後<br>點選「查詢車次」開始</div>
+    </div>
+    <div class="detail-card" id="detail-card"></div>
+  </div>
+
+  </div><!-- end page-home -->
+
+  <div id="page-favs" class="page hidden">
+    <div class="fav-page">
+      <div class="fav-page-header">★ 常用路線管理</div>
+      <div id="fav-manage-list"></div>
+      <div id="fav-add-hint" style="display:none">
+        <div class="fav-add-from-search" id="fav-add-current-btn">
+          <span class="plus">＋</span>
+          <span class="label" id="fav-add-label">加入目前查詢的路線</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <nav class="bottom-nav">
+    <div class="nav-item active" data-nav="home">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19V8l8-5 8 5v11"/><path d="M9 19v-6h6v6"/></svg>首頁
+    </div>
+    <div class="nav-item" data-nav="favs">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l3 7h7l-5.5 4.5L18 21l-6-4-6 4 1.5-7.5L2 9h7z"/></svg>最愛
+    </div>
+    <div class="nav-item">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>時刻
+    </div>
+    <div class="nav-item">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1A2 2 0 1 1 4.3 17l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1A2 2 0 1 1 7 4.3l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>設定
+    </div>
+  </nav>
+</div>
+
+<!-- Station Picker Modal -->
+<div class="modal-backdrop" id="modal">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-handle"></div>
+      <div class="modal-title-row">
+        <h2 id="modal-title">選擇車站</h2>
+        <span class="system-badge" id="modal-badge"></span>
+      </div>
+    </div>
+    <div class="quick-search-wrap">
+      <input type="text" class="quick-search" id="quick-search" placeholder="搜尋車站名稱…" autocomplete="off">
+    </div>
+    <div class="picker-body" id="picker-body"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* ======================================================
+   雙鐵時刻表 v2 ─ 縣市兩欄式選站 + 高鐵專屬站清單
+   ====================================================== */
+
+/* ─── 台鐵站資料（依縣市，來源：台鐵官網） ─── */
+const TRA = [
+  { county: '基隆市', stations: [
+    {zh:'基隆',en:'Keelung'},{zh:'三坑',en:'Sankeng'},{zh:'七堵',en:'Qidu'},
+    {zh:'百福',en:'Baifu'},{zh:'八堵',en:'Badu'},{zh:'暖暖',en:'Nuannuan'},
+  ]},
+  { county: '新北市', stations: [
+    {zh:'五堵',en:'Wudu'},{zh:'汐止',en:'Xizhi'},{zh:'汐科',en:'Xike'},
+    {zh:'南港',en:'Nangang'},{zh:'松山',en:'Songshan'},{zh:'板橋',en:'Banqiao'},
+    {zh:'浮洲',en:'Fuzhou'},{zh:'樹林',en:'Shulin'},{zh:'山佳',en:'Shanjia'},
+    {zh:'鶯歌',en:'Yingge'},{zh:'鳳鳴',en:'Fengming'},{zh:'四腳亭',en:'Sijiaoting'},
+    {zh:'瑞芳',en:'Ruifang'},{zh:'猴硐',en:'Houtong'},{zh:'三貂嶺',en:'Sandiaolin'},
+    {zh:'牡丹',en:'Mudan'},{zh:'雙溪',en:'Shuangxi'},{zh:'貢寮',en:'Gongliao'},
+    {zh:'福隆',en:'Fulong'},{zh:'海科館',en:'Marine Science Museum'},
+    {zh:'八斗子',en:'Badouzi'},{zh:'大華',en:'Dahua'},{zh:'十分',en:'Shifen'},
+    {zh:'望古',en:'Wangu'},{zh:'嶺腳',en:'Lingjiao'},{zh:'平溪',en:'Pingxi'},{zh:'菁桐',en:'Jingtong'},
+  ]},
+  { county: '臺北市', stations: [
+    {zh:'南港',en:'Nangang'},{zh:'松山',en:'Songshan'},{zh:'臺北',en:'Taipei'},{zh:'萬華',en:'Wanhua'},
+  ]},
+  { county: '桃園市', stations: [
+    {zh:'桃園',en:'Taoyuan'},{zh:'內壢',en:'Neili'},{zh:'中壢',en:'Zhongli'},
+    {zh:'埔心',en:'Puxin'},{zh:'楊梅',en:'Yangmei'},{zh:'富岡',en:'Fugang'},{zh:'新富',en:'Xinfu'},
+  ]},
+  { county: '新竹縣市', stations: [
+    {zh:'北湖',en:'Beihu'},{zh:'湖口',en:'Hukou'},{zh:'新豐',en:'Xinfeng'},
+    {zh:'竹北',en:'Zhubei'},{zh:'北新竹',en:'North Hsinchu'},{zh:'新竹',en:'Hsinchu'},
+    {zh:'三姓橋',en:'Sanxingqiao'},{zh:'香山',en:'Xiangshan'},{zh:'千甲',en:'Qianjia'},
+    {zh:'新莊',en:'Xinzhuang (Hsinchu)'},{zh:'上員',en:'Shangyuan'},{zh:'榮華',en:'Ronghua'},
+    {zh:'竹東',en:'Zhudong'},{zh:'橫山',en:'Hengshan'},{zh:'九讚頭',en:'Jiuzantou'},
+    {zh:'合興',en:'Hexing'},{zh:'富貴',en:'Fugui'},{zh:'內灣',en:'Neiwan'},
+    {zh:'竹中',en:'Zhuzhong'},{zh:'六家',en:'Liujia'},
+  ]},
+  { county: '苗栗縣', stations: [
+    {zh:'崎頂',en:'Qiding'},{zh:'竹南',en:'Zhunan'},{zh:'談文',en:'Tanwen'},
+    {zh:'大山',en:'Dashan'},{zh:'後龍',en:'Houlong'},{zh:'龍港',en:'Longgang'},
+    {zh:'白沙屯',en:'Baishaton'},{zh:'新埔',en:'Xinpu (Miaoli)'},{zh:'通霄',en:'Tongxiao'},
+    {zh:'苑裡',en:'Yuanli'},{zh:'造橋',en:'Zaojiao'},{zh:'豐富',en:'Fengfu'},
+    {zh:'苗栗',en:'Miaoli'},{zh:'南勢',en:'Nanshi'},{zh:'銅鑼',en:'Tongluo'},{zh:'三義',en:'Sanyi'},
+  ]},
+  { county: '臺中市', stations: [
+    {zh:'日南',en:'Rinan'},{zh:'大甲',en:'Dajia'},{zh:'臺中港',en:'Taichung Harbor'},
+    {zh:'清水',en:'Qingshui'},{zh:'沙鹿',en:'Shalu'},{zh:'龍井',en:'Longjing'},
+    {zh:'大肚',en:'Dadu'},{zh:'追分',en:'Zhuifen'},{zh:'泰安',en:'Taian'},
+    {zh:'后里',en:'Houli'},{zh:'豐原',en:'Fengyuan'},{zh:'栗林',en:'Lilin'},
+    {zh:'潭子',en:'Tanzi'},{zh:'頭家厝',en:'Toujiacao'},{zh:'松竹',en:'Songzhu'},
+    {zh:'太原',en:'Taiyuan'},{zh:'精武',en:'Jingwu'},{zh:'臺中',en:'Taichung'},
+    {zh:'五權',en:'Wuquan'},{zh:'大慶',en:'Daqing'},{zh:'烏日',en:'Wuri'},
+    {zh:'新烏日',en:'New Wuri'},{zh:'成功',en:'Chenggong'},
+  ]},
+  { county: '彰化縣', stations: [
+    {zh:'彰化',en:'Changhua'},{zh:'花壇',en:'Huatan'},{zh:'大村',en:'Dacun'},
+    {zh:'員林',en:'Yuanlin'},{zh:'永靖',en:'Yongjing'},{zh:'社頭',en:'Shetou'},
+    {zh:'田中',en:'Tianzhong'},{zh:'二水',en:'Ershu'},{zh:'源泉',en:'Yuanquan'},
+  ]},
+  { county: '南投縣', stations: [
+    {zh:'濁水',en:'Zhuoshui'},{zh:'龍泉',en:'Longquan'},{zh:'集集',en:'Jiji'},
+    {zh:'水里',en:'Shuili'},{zh:'車埕',en:'Checheng'},
+  ]},
+  { county: '雲林縣', stations: [
+    {zh:'林內',en:'Linnei'},{zh:'石榴',en:'Shiliu'},{zh:'斗六',en:'Douliu'},
+    {zh:'斗南',en:'Dounan'},{zh:'石龜',en:'Shigui'},
+  ]},
+  { county: '嘉義縣市', stations: [
+    {zh:'大林',en:'Dalin'},{zh:'民雄',en:'Minxiong'},{zh:'嘉北',en:'Chiayi North'},
+    {zh:'嘉義',en:'Chiayi'},{zh:'水上',en:'Shuishang'},{zh:'南靖',en:'Nanjing'},
+  ]},
+  { county: '臺南市', stations: [
+    {zh:'後壁',en:'Houbi'},{zh:'新營',en:'Xinying'},{zh:'柳營',en:'Liuying'},
+    {zh:'林鳳營',en:'Linfengying'},{zh:'隆田',en:'Longtian'},{zh:'拔林',en:'Balin'},
+    {zh:'善化',en:'Shanhua'},{zh:'南科',en:'Southern Taiwan Science Park'},{zh:'新市',en:'Xinshi'},
+    {zh:'永康',en:'Yongkang'},{zh:'大橋',en:'Daqiao'},{zh:'臺南',en:'Tainan'},
+    {zh:'保安',en:'Baoan'},{zh:'仁德',en:'Rende'},{zh:'中洲',en:'Zhongzhou'},
+    {zh:'長榮大學',en:'CJU'},{zh:'沙崙',en:'Shalun'},
+  ]},
+  { county: '高雄市', stations: [
+    {zh:'大湖',en:'Dahu'},{zh:'路竹',en:'Luzhu'},{zh:'岡山',en:'Gangshan'},
+    {zh:'橋頭',en:'Qiaotou'},{zh:'楠梓',en:'Nanzi'},{zh:'新左營',en:'New Zuoying'},
+    {zh:'左營',en:'Zuoying'},{zh:'內惟',en:'Neiwei'},{zh:'美術館',en:'Art Museum'},
+    {zh:'鼓山',en:'Gushan'},{zh:'三塊厝',en:'Sankuaicuo'},{zh:'高雄',en:'Kaohsiung'},
+    {zh:'民族',en:'Minzu'},{zh:'科工館',en:'Science Museum'},{zh:'正義',en:'Zhengyi'},
+    {zh:'鳳山',en:'Fengshan'},{zh:'後庄',en:'Houzhuang'},{zh:'九曲堂',en:'Jiuqutang'},
+  ]},
+  { county: '屏東縣', stations: [
+    {zh:'六塊厝',en:'Liukuaicuo'},{zh:'屏東',en:'Pingtung'},{zh:'歸來',en:'Guilai'},
+    {zh:'麟洛',en:'Linluo'},{zh:'西勢',en:'Xishi'},{zh:'竹田',en:'Zhutian'},
+    {zh:'潮州',en:'Chaozhou'},{zh:'崁頂',en:'Kanding'},{zh:'南州',en:'Nanzhou'},
+    {zh:'鎮安',en:'Zhenan'},{zh:'林邊',en:'Linbian'},{zh:'佳冬',en:'Jiadong'},
+    {zh:'東海',en:'Donghai'},{zh:'枋寮',en:'Fangliao'},{zh:'加祿',en:'Jialu'},
+    {zh:'內獅',en:'Neishi'},{zh:'枋山',en:'Fangshan'},
+  ]},
+  { county: '臺東縣', stations: [
+    {zh:'池上',en:'Chishang'},{zh:'海端',en:'Haiduan'},{zh:'關山',en:'Guanshan'},
+    {zh:'瑞和',en:'Ruihe'},{zh:'瑞源',en:'Ruiyuan'},{zh:'鹿野',en:'Luye'},
+    {zh:'山里',en:'Shanli'},{zh:'臺東',en:'Taitung'},{zh:'康樂',en:'Kangle'},
+    {zh:'知本',en:'Zhiben'},{zh:'太麻里',en:'Taimali'},{zh:'金崙',en:'Jinlun'},
+    {zh:'瀧溪',en:'Longxi'},{zh:'大武',en:'Dawu'},
+  ]},
+  { county: '花蓮縣', stations: [
+    {zh:'和平',en:'Heping'},{zh:'和仁',en:'Heren'},{zh:'崇德',en:'Chongde'},
+    {zh:'新城',en:'Xincheng'},{zh:'景美',en:'Jingmei'},{zh:'北埔',en:'Beipu'},
+    {zh:'花蓮',en:'Hualien'},{zh:'吉安',en:'Jian'},{zh:'志學',en:'Zhixue'},
+    {zh:'平和',en:'Pinghe'},{zh:'壽豐',en:'Shoufeng'},{zh:'豐田',en:'Fengtian'},
+    {zh:'林榮新光',en:'Linrong Xinguang'},{zh:'南平',en:'Nanping'},{zh:'鳳林',en:'Fenglin'},
+    {zh:'萬榮',en:'Wanrong'},{zh:'光復',en:'Guangfu'},{zh:'大富',en:'Dafu'},
+    {zh:'富源',en:'Fuyuan'},{zh:'瑞穗',en:'Ruisui'},{zh:'三民',en:'Sanmin'},
+    {zh:'玉里',en:'Yuli'},{zh:'東里',en:'Dongli'},{zh:'東竹',en:'Dongzhu'},{zh:'富里',en:'Fuli'},
+  ]},
+  { county: '宜蘭縣', stations: [
+    {zh:'石城',en:'Shicheng'},{zh:'大里',en:'Dali'},{zh:'大溪',en:'Daxi'},
+    {zh:'龜山',en:'Guishan'},{zh:'外澳',en:'Waiao'},{zh:'頭城',en:'Toucheng'},
+    {zh:'頂埔',en:'Dingpu'},{zh:'礁溪',en:'Jiaoxi'},{zh:'四城',en:'Sicheng'},
+    {zh:'宜蘭',en:'Yilan'},{zh:'二結',en:'Erjie'},{zh:'中里',en:'Zhongli (Yilan)'},
+    {zh:'羅東',en:'Luodong'},{zh:'冬山',en:'Dongshan'},{zh:'永樂',en:'Yongle'},
+    {zh:'東澳',en:'Dongao'},{zh:'南澳',en:'Nanao'},{zh:'武塔',en:'Wuta'},
+    {zh:'漢本',en:'Hanben'},{zh:'蘇澳新',en:'New Suao'},{zh:'蘇澳',en:'Suao'},
+  ]},
+];
+
+/* ─── 高鐵站（12站，依北→南排列） ─── */
+const THSR = [
+  {zh:'南港', en:'Nangang',  city:'臺北市', note:'南港展覽館附近'},
+  {zh:'台北', en:'Taipei',   city:'臺北市', note:'台北車站共構'},
+  {zh:'板橋', en:'Banqiao',  city:'新北市', note:'板橋車站共構'},
+  {zh:'桃園', en:'Taoyuan',  city:'桃園市', note:'中壢區青埔'},
+  {zh:'新竹', en:'Hsinchu',  city:'新竹縣', note:'六家（台鐵六家站旁）'},
+  {zh:'苗栗', en:'Miaoli',   city:'苗栗縣', note:'豐富（台鐵豐富站旁）'},
+  {zh:'台中', en:'Taichung', city:'臺中市', note:'烏日（台鐵新烏日站旁）'},
+  {zh:'彰化', en:'Changhua', city:'彰化縣', note:'彰化市'},
+  {zh:'雲林', en:'Yunlin',   city:'雲林縣', note:'虎尾'},
+  {zh:'嘉義', en:'Chiayi',   city:'嘉義縣', note:'太保市'},
+  {zh:'台南', en:'Tainan',   city:'臺南市', note:'沙崙（台鐵沙崙站旁）'},
+  {zh:'左營', en:'Zuoying',  city:'高雄市', note:'新左營（台鐵新左營站旁）'},
+];
+
+/* ======================================================
+   TDX API 設定區
+   填入 Cloudflare Worker 部署後的網址即可串接真實資料
+   範例：https://tdx-proxy.your-name.workers.dev
+   ====================================================== */
+const TDX_CONFIG = {
+  PROXY_URL: 'https://tdx-proxy.marspaul-li.workers.dev',
+};
+
+// 站 ID 動態從 TDX 取得，這裡只是備用 fallback（啟動時會被覆蓋）
+let TRA_STATION_ID  = {};
+let THSR_STATION_ID = {};
+
+// 台鐵車種 → 對號/非對號分類
+// TrainTypeName 對號：自強、普悠瑪、太魯閣、莒光、復興
+// TrainTypeName 非對號：區間、區間快
+const RESERVED_TYPES   = ['自強','普悠瑪','太魯閣','莒光','復興'];
+const UNRESERVED_TYPES = ['區間','區間快'];
+
+// 站名統一：臺→台，方便與 TDX 回傳名稱對齊
+const normName = s => s.replace(/臺/g, '台');
+
+// 站牌 ID 快取：localStorage 存 7 天，避免頻繁打 API
+const STATIONS_CACHE_KEY = 'dual_rail_stations_v1';
+const STATIONS_TTL_MS    = 7 * 24 * 60 * 60 * 1000; // 7 天
+
+function loadStationsFromCache() {
+  try {
+    const raw = localStorage.getItem(STATIONS_CACHE_KEY);
+    if (!raw) return false;
+    const { ts, tra, thsr } = JSON.parse(raw);
+    if (Date.now() - ts > STATIONS_TTL_MS) return false;
+    TRA_STATION_ID  = tra;
+    THSR_STATION_ID = thsr;
+    return true;
+  } catch { return false; }
+}
+
+function saveStationsToCache() {
+  try {
+    localStorage.setItem(STATIONS_CACHE_KEY, JSON.stringify({
+      ts:   Date.now(),
+      tra:  TRA_STATION_ID,
+      thsr: THSR_STATION_ID,
+    }));
+  } catch {}
+}
+
+let _stationsReady = Promise.resolve();
+
+function fetchStations() {
+  return (async () => {
+    removeStationErrorBanner();
+    try {
+      const [traRes, thsrRes] = await Promise.all([
+        fetch(`${TDX_CONFIG.PROXY_URL}/stations/tra`),
+        fetch(`${TDX_CONFIG.PROXY_URL}/stations/thsr`),
+      ]);
+      const traData  = await traRes.json();
+      const thsrData = await thsrRes.json();
+      if (traData.error)  throw new Error(traData.error);
+      if (thsrData.error) throw new Error(thsrData.error);
+      TRA_STATION_ID  = traData;
+      THSR_STATION_ID = thsrData;
+      saveStationsToCache();
+    } catch (e) {
+      console.error('[Stations load failed]', e);
+      showStationErrorBanner(e.message);
+    }
+  })();
+}
+
+function showStationErrorBanner(msg) {
+  removeStationErrorBanner();
+  const el = document.createElement('div');
+  el.id = 'station-error-banner';
+  el.style.cssText = `margin:0 22px 0;padding:10px 14px;border-radius:12px;background:rgba(248,113,113,0.08);border:1px solid rgba(248,113,113,0.3);font-size:12px;color:#F87171;line-height:1.6;display:flex;align-items:center;justify-content:space-between;gap:10px;`;
+  el.innerHTML = `<span>⚠️ 站牌資料載入失敗<br><small style="opacity:.7;font-family:var(--mono)">${msg}</small></span>
+    <button id="retry-stations-btn" style="flex-shrink:0;padding:6px 12px;border:1px solid rgba(248,113,113,0.4);border-radius:8px;background:transparent;color:#F87171;font-size:12px;cursor:pointer;">重試</button>`;
+  const searchCard = document.querySelector('.search-card');
+  searchCard.insertAdjacentElement('afterend', el);
+  document.getElementById('retry-stations-btn').addEventListener('click', () => {
+    _stationsReady = fetchStations();
+  });
+}
+
+function removeStationErrorBanner() {
+  document.getElementById('station-error-banner')?.remove();
+}
+
+if (TDX_CONFIG.PROXY_URL) {
+  if (loadStationsFromCache()) {
+    console.log('[Stations] 從快取載入，TRA:', Object.keys(TRA_STATION_ID).length);
+  } else {
+    _stationsReady = fetchStations();
+  }
+}
+
+/* ─── 狀態 ─── */
+const S = {
+  system: 'tra',
+  from: null, to: null,
+  pickerTarget: null,
+  activeCounty: TRA[0].county,
+  filter: 'all',
+  trainType: 'all',   // 'all' | 'reserved' | 'unreserved'
+};
+
+const $ = s => document.querySelector(s);
+const $$ = s => document.querySelectorAll(s);
+const pad = n => String(n).padStart(2,'0');
+const fmt = d => `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+const ri  = (a,b) => Math.floor(Math.random()*(b-a+1))+a;
+
+/* ─── Clock ─── */
+const tickClock = () => $('#clock').textContent = fmt(new Date());
+setInterval(tickClock, 1000); tickClock();
+
+/* ─── Default date/time ─── */
+(() => {
+  const now = new Date();
+  $('#date-input').value = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}`;
+  $('#time-input').value = fmt(now);
+})();
+
+/* ─── Update station button display ─── */
+function setBtn(target, obj) {
+  const btn = $(`#${target}-btn`);
+  if (!obj) {
+    btn.className = 'station-btn empty';
+    btn.querySelector('.county').textContent = '　';
+    btn.querySelector('.name').textContent = '點選選擇';
+    return;
+  }
+  btn.className = 'station-btn';
+  btn.querySelector('.county').textContent = (obj.county || obj.city || '');
+  btn.querySelector('.name').textContent = obj.zh;
+}
+
+/* ─── Tabs ─── */
+$$('.tab').forEach(t => t.addEventListener('click', () => {
+  $$('.tab').forEach(x => x.classList.remove('active'));
+  t.classList.add('active');
+  S.system = t.dataset.tab;
+  S.from = null; S.to = null;
+  setBtn('from', null); setBtn('to', null);
+  // 車種選擇只在台鐵顯示
+  $('#traintype-row').style.display = S.system === 'tra' ? '' : 'none';
+}));
+
+/* ─── Open picker ─── */
+function openPicker(target) {
+  S.pickerTarget = target;
+  $('#modal-title').textContent = target === 'from' ? '選擇起站' : '選擇訖站';
+  const badge = $('#modal-badge');
+  if (S.system === 'thsr') {
+    badge.textContent = '台灣高鐵 THSR · 12站'; badge.className = 'system-badge thsr';
+    renderThsr();
+  } else {
+    badge.textContent = '台灣鐵路 TRA'; badge.className = 'system-badge tra';
+    S.activeCounty = TRA[0].county;
+    renderTra();
+  }
+  $('#quick-search').value = '';
+  $('#modal').classList.add('show');
+  setTimeout(() => $('#quick-search').focus(), 300);
+}
+$('#from-btn').addEventListener('click', () => openPicker('from'));
+$('#to-btn').addEventListener('click',   () => openPicker('to'));
+$('#modal').addEventListener('click', e => { if (e.target.id === 'modal') closePicker(); });
+
+function closePicker() { $('#modal').classList.remove('show'); }
+
+/* ─── Render TRA two-panel ─── */
+function renderTra(keyword) {
+  const body = $('#picker-body');
+  keyword = (keyword || '').trim();
+
+  if (keyword) {
+    // Flat search results
+    const hits = [];
+    TRA.forEach(g => g.stations.filter(s => s.zh.includes(keyword) || s.en.toLowerCase().includes(keyword.toLowerCase())).forEach(s => hits.push({county: g.county, ...s})));
+    body.innerHTML = `<div class="flat-list">${
+      hits.length
+        ? hits.map(s => `<div class="station-item" data-county="${s.county}" data-name="${s.zh}">
+            <span class="sname">${s.county} / ${s.zh}</span>
+            <span class="smeta">${s.en}</span>
+          </div>`).join('')
+        : '<div class="empty" style="padding:30px 0">查無車站</div>'
+    }</div>`;
+    body.querySelectorAll('.station-item').forEach(el =>
+      el.addEventListener('click', () => pickTra(el.dataset.county, el.dataset.name))
+    );
+    return;
+  }
+
+  // Two-panel
+  const counties = TRA.map(g => `
+    <div class="county-item ${g.county === S.activeCounty ? 'active' : ''}" data-county="${g.county}">
+      ${g.county}
+    </div>`).join('');
+
+  const group = TRA.find(g => g.county === S.activeCounty);
+  const stationItems = (group?.stations || []).map(s => `
+    <div class="station-item" data-county="${S.activeCounty}" data-name="${s.zh}">
+      <span class="sname">${s.zh}</span>
+      <span class="smeta">${s.en}</span>
+    </div>`).join('');
+
+  body.innerHTML = `
+    <div class="county-panel">${counties}</div>
+    <div class="station-panel">${stationItems}</div>`;
+
+  // County click
+  body.querySelectorAll('.county-item').forEach(el =>
+    el.addEventListener('click', () => { S.activeCounty = el.dataset.county; renderTra(); })
+  );
+  // Station click
+  body.querySelectorAll('.station-item').forEach(el =>
+    el.addEventListener('click', () => pickTra(el.dataset.county, el.dataset.name))
+  );
+  // Auto-scroll active county
+  const active = body.querySelector('.county-item.active');
+  if (active) setTimeout(() => active.scrollIntoView({ block: 'nearest' }), 0);
+}
+
+function pickTra(county, name) {
+  const g = TRA.find(x => x.county === county);
+  const s = g?.stations.find(x => x.zh === name);
+  if (!s) return;
+  const obj = { county, zh: s.zh, en: s.en };
+  S[S.pickerTarget] = obj;
+  setBtn(S.pickerTarget, obj);
+  closePicker();
+}
+
+/* ─── Render THSR flat list ─── */
+function renderThsr(keyword) {
+  const body = $('#picker-body');
+  keyword = (keyword || '').trim();
+  const list = keyword
+    ? THSR.filter(s => s.zh.includes(keyword) || s.en.toLowerCase().includes(keyword.toLowerCase()))
+    : THSR;
+
+  body.innerHTML = `<div class="flat-list">${
+    list.map((s, i) => `
+      <div class="thsr-item" data-name="${s.zh}">
+        <span class="thsr-seq">${THSR.indexOf(s)+1}</span>
+        <div class="thsr-info">
+          <div class="sname">${s.zh} <span style="font-size:11px;color:var(--c-text-dim);font-weight:400;">${s.en}</span></div>
+          <div class="smeta">${s.city} · ${s.note}</div>
+        </div>
+        <span class="thsr-arrow">›</span>
+      </div>`).join('')
+    || '<div class="empty" style="padding:30px 0">查無車站</div>'
+  }</div>`;
+
+  body.querySelectorAll('.thsr-item').forEach(el =>
+    el.addEventListener('click', () => {
+      const s = THSR.find(x => x.zh === el.dataset.name);
+      if (!s) return;
+      S[S.pickerTarget] = { city: s.city, zh: s.zh, en: s.en };
+      setBtn(S.pickerTarget, S[S.pickerTarget]);
+      closePicker();
+    })
+  );
+}
+
+/* ─── Quick search ─── */
+$('#quick-search').addEventListener('input', e => {
+  if (S.system === 'thsr') renderThsr(e.target.value);
+  else renderTra(e.target.value);
+});
+
+/* ─── Swap ─── */
+$('#swap-btn').addEventListener('click', () => {
+  [S.from, S.to] = [S.to, S.from];
+  setBtn('from', S.from); setBtn('to', S.to);
+  $('#swap-btn').classList.toggle('spin');
+});
+
+/* ─── Favorites system ─── */
+const FAV_KEY = 'dual_rail_favs_v1';
+const FAV_DEFAULTS = [
+  { sys:'tra',  from:{zh:'竹北', en:'Zhubei',  county:'新竹縣市'}, to:{zh:'臺北', en:'Taipei',  county:'臺北市'} },
+  { sys:'tra',  from:{zh:'湖口', en:'Hukou',   county:'新竹縣市'}, to:{zh:'臺北', en:'Taipei',  county:'臺北市'} },
+  { sys:'thsr', from:{zh:'新竹', en:'Hsinchu', city:'新竹縣'},     to:{zh:'台北', en:'Taipei',  city:'臺北市'} },
+  { sys:'thsr', from:{zh:'台北', en:'Taipei',  city:'臺北市'},     to:{zh:'左營', en:'Zuoying', city:'高雄市'} },
+  { sys:'tra',  from:{zh:'臺北', en:'Taipei',  county:'臺北市'},   to:{zh:'花蓮', en:'Hualien', county:'花蓮縣'} },
+];
+let FAVS = [];
+
+function loadFavs() {
+  try {
+    const raw = localStorage.getItem(FAV_KEY);
+    FAVS = raw ? JSON.parse(raw) : JSON.parse(JSON.stringify(FAV_DEFAULTS));
+    if (!raw) saveFavs();
+  } catch { FAVS = JSON.parse(JSON.stringify(FAV_DEFAULTS)); }
+}
+function saveFavs() {
+  try { localStorage.setItem(FAV_KEY, JSON.stringify(FAVS)); } catch {}
+}
+function isFaved() {
+  if (!S.from || !S.to) return false;
+  return FAVS.some(f => f.sys === S.system && f.from.zh === S.from.zh && f.to.zh === S.to.zh);
+}
+function addFav() {
+  if (!S.from || !S.to || isFaved()) return;
+  FAVS.push({ sys: S.system, from: {...S.from}, to: {...S.to} });
+  saveFavs();
+  renderFavChips();
+  renderFavManage();
+  updateAddFavBtn();
+  showToast('已加入常用路線 ★');
+}
+function deleteFav(idx) {
+  FAVS.splice(idx, 1);
+  saveFavs();
+  renderFavChips();
+  renderFavManage();
+  updateAddFavBtn();
+}
+function renderFavChips() {
+  const list = $('.fav-list');
+  list.innerHTML = FAVS.map((f, i) => {
+    const suffix = f.sys === 'thsr' ? '（高鐵）' : '';
+    return `<div class="fav-chip ${f.sys}" data-fav-idx="${i}"><span class="dot"></span>${f.from.zh} → ${f.to.zh}${suffix}</div>`;
+  }).join('');
+  $$('.fav-chip').forEach(chip => {
+    chip.addEventListener('click', () => clickFav(+chip.dataset.favIdx));
+  });
+}
+function clickFav(idx) {
+  const f = FAVS[idx];
+  if (!f) return;
+  $$('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === f.sys));
+  S.system = f.sys;
+  S.from = {...f.from};
+  S.to   = {...f.to};
+  $('#traintype-row').style.display = f.sys === 'tra' ? '' : 'none';
+  setBtn('from', S.from);
+  setBtn('to', S.to);
+  showPage('home');
+  doSearch();
+}
+function renderFavManage() {
+  const list = $('#fav-manage-list');
+  const hint = $('#fav-add-hint');
+  if (FAVS.length === 0) {
+    list.innerHTML = '<div class="fav-empty">尚無常用路線<br><small>查詢後點「加入常用」即可儲存</small></div>';
+  } else {
+    list.innerHTML = FAVS.map((f, i) => `
+      <div class="fav-manage-item">
+        <div class="fav-manage-dot ${f.sys}"></div>
+        <div class="fav-manage-info">
+          <div class="fav-manage-route">${f.from.zh} → ${f.to.zh}</div>
+          <div class="fav-manage-sys">${f.sys === 'thsr' ? '高鐵 THSR' : '台鐵 TRA'}</div>
+        </div>
+        <button class="fav-delete-btn" data-del-idx="${i}" aria-label="刪除">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 6L6 18M6 6l12 12"/></svg>
+        </button>
+      </div>`).join('');
+    $$('.fav-delete-btn').forEach(btn => {
+      btn.addEventListener('click', () => deleteFav(+btn.dataset.delIdx));
+    });
+  }
+  if (hint) {
+    const canAdd = S.from && S.to && !isFaved();
+    hint.style.display = canAdd ? '' : 'none';
+    if (canAdd) {
+      const sysLabel = S.system === 'thsr' ? '高鐵' : '台鐵';
+      $('#fav-add-label').textContent = `加入「${S.from.zh} → ${S.to.zh}」（${sysLabel}）`;
+    }
+  }
+}
+function updateAddFavBtn() {
+  const btn = $('#add-fav-btn');
+  if (!btn) return;
+  if (!S.from || !S.to) { btn.style.display = 'none'; return; }
+  btn.style.display = '';
+  if (isFaved()) {
+    btn.textContent = '★ 已收藏';
+    btn.classList.add('saved');
+  } else {
+    btn.textContent = '☆ 加入常用';
+    btn.classList.remove('saved');
+  }
+}
+function showPage(name) {
+  $('#page-home').classList.toggle('hidden', name !== 'home');
+  $('#page-favs').classList.toggle('hidden', name !== 'favs');
+  $$('.nav-item').forEach(item => item.classList.toggle('active', item.dataset.nav === name));
+  if (name === 'favs') renderFavManage();
+}
+
+/* ─── Bottom nav ─── */
+$$('.nav-item').forEach(item => {
+  item.addEventListener('click', () => {
+    const nav = item.dataset.nav;
+    if (nav === 'home' || nav === 'favs') showPage(nav);
+  });
+});
+$('#add-fav-btn').addEventListener('click', addFav);
+$('#fav-add-current-btn').addEventListener('click', addFav);
+
+loadFavs();
+renderFavChips();
+
+/* ─── Fav-list 滑鼠拖曳滾動（桌機） ─── */
+{
+  const el = $('.fav-list');
+  let down = false, startX = 0, scrollLeft = 0;
+  el.addEventListener('mousedown', e => {
+    down = true; startX = e.pageX - el.offsetLeft; scrollLeft = el.scrollLeft;
+    el.classList.add('dragging');
+  });
+  el.addEventListener('mousemove', e => {
+    if (!down) return;
+    e.preventDefault();
+    el.scrollLeft = scrollLeft - (e.pageX - el.offsetLeft - startX) * 1.5;
+  });
+  const stop = () => { down = false; el.classList.remove('dragging'); };
+  el.addEventListener('mouseup', stop);
+  el.addEventListener('mouseleave', stop);
+}
+
+/* ─── Search ─── */
+$('#search-btn').addEventListener('click', doSearch);
+
+async function doSearch() {
+  if (!S.from || !S.to) { showToast('請選擇起訖站'); return; }
+  if (S.from.zh === S.to.zh) { showToast('起訖站不能相同'); return; }
+
+  const dateVal = $('#date-input').value;
+  const timeVal = $('#time-input').value;
+
+  // ── 判斷是否有設定 proxy ──
+  if (TDX_CONFIG.PROXY_URL) {
+    await fetchFromTDX(dateVal, timeVal);
+  } else {
+    // 沒有 API 金鑰 → 顯示示範資料（假資料）
+    showApiHint();
+    const base = new Date(`${dateVal}T${timeVal}`);
+    renderResults(makeDemoTrains(S.system, S.from.zh, S.to.zh, base));
+  }
+  $('#detail-card').classList.remove('show');
+}
+
+/* ── TDX 真實 API 呼叫（透過 Cloudflare Worker proxy） ── */
+async function fetchFromTDX(dateVal, timeVal) {
+  const list = $('#results-list');
+  list.innerHTML = '<div class="empty"><div class="icon" style="font-size:28px">⏳</div><br>查詢中…</div>';
+  await _stationsReady;
+
+  try {
+    let trains;
+    if (S.system === 'thsr') {
+      trains = await fetchThsr(dateVal, timeVal);
+    } else {
+      trains = await fetchTra(dateVal, timeVal);
+    }
+
+    if (!trains.length) {
+      list.innerHTML = '<div class="empty"><div class="icon">😢</div>查無班次</div>';
+      return;
+    }
+    renderResults(trains);
+
+  } catch (err) {
+    console.error(err);
+    list.innerHTML = `<div class="empty"><div class="icon">⚠️</div>API 呼叫失敗<br><small style="font-family:var(--mono);font-size:11px;opacity:.6">${err.message}</small></div>`;
+  }
+}
+
+async function fetchTra(dateVal, timeVal) {
+  const fromId = TRA_STATION_ID[normName(S.from.zh)];
+  const toId   = TRA_STATION_ID[normName(S.to.zh)];
+  if (!fromId || !toId) throw new Error(`查無站代碼：${S.from.zh} / ${S.to.zh}（站牌資料是否已載入？）`);
+
+  // 時刻表 + 票價同時查
+  const [ttRes, fareRes] = await Promise.all([
+    fetch(`${TDX_CONFIG.PROXY_URL}/tra/${fromId}/${toId}/${dateVal}`),
+    fetch(`${TDX_CONFIG.PROXY_URL}/tra-fare/${fromId}/${toId}`),
+  ]);
+  const json     = await ttRes.json();
+  const fareJson = await fareRes.json();
+  if (json.error) throw new Error(json.error);
+
+  // 建立票價對照表：`${direction}_${trainType}` → 成人全票價
+  const fareMap = {};
+  const fareList = Array.isArray(fareJson) ? fareJson : (fareJson.ODFares || fareJson.Fares || []);
+  for (const entry of fareList) {
+    const key = `${entry.Direction}_${entry.TrainType}`;
+    const adult = entry.Fares?.find(f => f.TicketType === 1 && f.FareClass === 1);
+    if (adult) fareMap[key] = adult.Price;
+  }
+
+  const timetables = json.TrainTimetables || [];
+  const [filterH, filterM] = timeVal.split(':').map(Number);
+  const filterMin = filterH * 60 + filterM;
+
+  return timetables.map(tt => {
+    const info  = tt.TrainInfo;
+    const stops = tt.StopTimes;
+    const fromStop = stops.find(s => s.StationID === fromId);
+    const toStop   = stops.find(s => s.StationID === toId);
+    if (!fromStop || !toStop) return null;
+
+    const dep = fromStop.DepartureTime || fromStop.ArrivalTime;
+    const arr = toStop.ArrivalTime     || toStop.DepartureTime;
+    const [dh, dm] = dep.split(':').map(Number);
+    const [ah, am] = arr.split(':').map(Number);
+    const dur = (ah * 60 + am) - (dh * 60 + dm);
+    const typeName = info.TrainTypeName?.Zh_tw || info.TrainTypeName || '';
+    const fareKey  = `${info.Direction}_${info.TrainTypeCode}`;
+
+    return {
+      no:   info.TrainNo,
+      type: typeName,
+      sys:  'tra',
+      dep, arr,
+      dur:  dur > 0 ? dur : dur + 1440,
+      depMin: dh * 60 + dm,
+      price: fareMap[fareKey] ?? null,
+      from: S.from.zh, to: S.to.zh,
+      late: false, lateMin: 0,
+      reserved: RESERVED_TYPES.some(t => typeName.includes(t)),
+    };
+  }).filter(t => t && t.depMin >= filterMin)
+    .sort((a, b) => a.depMin - b.depMin);
+}
+
+async function fetchThsr(dateVal, timeVal) {
+  const fromId = THSR_STATION_ID[normName(S.from.zh)];
+  const toId   = THSR_STATION_ID[normName(S.to.zh)];
+  if (!fromId || !toId) throw new Error(`查無站代碼：${S.from.zh} / ${S.to.zh}（站牌資料是否已載入？）`);
+
+  // 時刻表 + 票價同時查
+  const [ttRes, fareRes] = await Promise.all([
+    fetch(`${TDX_CONFIG.PROXY_URL}/thsr/${fromId}/${toId}/${dateVal}`),
+    fetch(`${TDX_CONFIG.PROXY_URL}/thsr-fare/${fromId}/${toId}`),
+  ]);
+  const json     = await ttRes.json();
+  const fareJson = await fareRes.json();
+  if (json.error) throw new Error(json.error);
+
+  // THSR 票價：取標準對號座（CabinClass=2, FareClass=1）Direction=0
+  const fareList = Array.isArray(fareJson) ? fareJson : [];
+  const fareEntry = fareList.find(f => f.Direction === 0) || fareList[0];
+  const thsrPrice = fareEntry?.Fares?.find(f => f.CabinClass === 2 && f.FareClass === 1)?.Price
+                 ?? fareEntry?.Fares?.find(f => f.TicketType === 1 && f.FareClass === 1)?.Price
+                 ?? null;
+
+  // v2 回傳格式：直接是陣列（非 {ODTimetables:[...]}）
+  const timetables = Array.isArray(json) ? json : (json.ODTimetables || []);
+  const [filterH, filterM] = timeVal.split(':').map(Number);
+  const filterMin = filterH * 60 + filterM;
+
+  return timetables.map(tt => {
+    const dep = tt.OriginStopTime?.DepartureTime;
+    const arr = tt.DestinationStopTime?.ArrivalTime;
+    if (!dep || !arr) return null;
+
+    const [dh, dm] = dep.split(':').map(Number);
+    const [ah, am] = arr.split(':').map(Number);
+    const dur = (ah * 60 + am) - (dh * 60 + dm);
+
+    return {
+      no:   tt.DailyTrainInfo?.TrainNo || '—',
+      type: '高鐵',
+      sys:  'thsr',
+      dep, arr,
+      dur:  dur > 0 ? dur : dur + 1440,
+      depMin: dh * 60 + dm,
+      price: thsrPrice,
+      from: S.from.zh, to: S.to.zh,
+      late: false, lateMin: 0,
+      reserved: true,
+    };
+  }).filter(t => t && t.depMin >= filterMin)
+    .sort((a, b) => a.depMin - b.depMin);
+}
+
+/* ── 無 API 金鑰時顯示提示橫幅 ── */
+function showApiHint() {
+  if ($('#api-hint')) return;
+  const banner = document.createElement('div');
+  banner.id = 'api-hint';
+  banner.style.cssText = `
+    margin: 0 22px 12px; padding: 10px 14px; border-radius: 12px;
+    background: rgba(255,180,0,0.08); border: 1px solid rgba(255,180,0,0.3);
+    font-size: 12px; color: #FFB661; line-height: 1.5;
+  `;
+  banner.innerHTML = `⚠️ 目前顯示<b>示範資料</b>，非真實班次。<br>填入 TDX API 金鑰後即可查詢真實資料。`;
+  $('#results-list').before(banner);
+}
+
+/* ── 示範資料產生器（開發用，模擬 TDX 資料格式） ── */
+const DEMO_RESERVED   = ['自強','普悠瑪','太魯閣','莒光'];
+const DEMO_UNRESERVED = ['區間','區間快'];
+const DEMO_ALL = [...DEMO_RESERVED, ...DEMO_UNRESERVED];
+
+function makeDemoTrains(sys, from, to, base) {
+  const dur0 = sys === 'thsr' ? ri(25,95) : ri(45,190);
+  return Array.from({length: 10}, (_, i) => {
+    const offset = i * ri(10, 28);
+    const dep = new Date(base.getTime() + offset * 60000);
+    const dur = dur0 + ri(-5, 8);
+    const arr = new Date(dep.getTime() + dur * 60000);
+    if (sys === 'thsr') {
+      return { no:'0'+ri(801,897), type:'商務/標準', sys, dep:fmt(dep), arr:fmt(arr), dur, price:ri(190,1490), from, to, late:Math.random()>.87, lateMin:ri(2,12), reserved:true };
+    }
+    // 台鐵：隨機混合對號與非對號
+    const isReserved = Math.random() > 0.4;
+    const pool = isReserved ? DEMO_RESERVED : DEMO_UNRESERVED;
+    const type = pool[ri(0, pool.length-1)];
+    return { no:ri(100,4500), type, sys, dep:fmt(dep), arr:fmt(arr), dur, price:ri(80,850), from, to, late:Math.random()>.87, lateMin:ri(2,12), reserved:isReserved };
+  });
+}
+
+/* ─── Render results ─── */
+function renderResults(trains) {
+  const list = $('#results-list');
+  $('#results-title').textContent = `${S.from.zh} → ${S.to.zh}`;
+
+  let data = trains;
+
+  // 車種篩選（台鐵）
+  if (S.system === 'tra' && S.trainType !== 'all') {
+    data = data.filter(t => S.trainType === 'reserved' ? t.reserved : !t.reserved);
+  }
+  // 直達篩選
+  if (S.filter === 'fast') {
+    const avg = data.reduce((s,t) => s+t.dur, 0) / (data.length || 1);
+    data = data.filter(t => t.dur <= avg);
+  }
+
+  window._T = data;
+
+  if (!data.length) {
+    list.innerHTML = '<div class="empty"><div class="icon">😢</div>查無符合條件的班次</div>';
+    return;
+  }
+
+  list.innerHTML = data.map((t, i) => {
+    const isReserved = t.reserved;
+    const tagColor = t.sys === 'thsr' ? 'var(--c-thsr)'
+                   : isReserved ? '#60a5fa' : '#a3e635';
+    const priceText = t.price != null ? `$${t.price}` : '—';
+    return `
+    <div class="train-card" data-system="${t.sys}" data-idx="${i}">
+      <div class="train-no">
+        <div class="num" style="color:${tagColor}">${t.no}</div>
+        <div class="type">${t.type}</div>
+      </div>
+      <div class="train-time">
+        <div class="time-block"><div class="t">${t.dep}</div><div class="s">${t.from}</div></div>
+        <div class="duration"><div class="line"></div><div class="min">${t.dur} 分</div></div>
+        <div class="time-block"><div class="t">${t.arr}</div><div class="s">${t.to}</div></div>
+      </div>
+      <div class="train-meta">
+        <div class="price">${priceText}</div>
+        <div class="status ${t.late ? 'delay' : 'ontime'}">${t.late ? '誤點 '+t.lateMin+'′' : '準點'}</div>
+      </div>
+    </div>`;
+  }).join('');
+
+  $$('.train-card').forEach(c => c.addEventListener('click', () => showDetail(+c.dataset.idx, c)));
+  updateAddFavBtn();
+}
+
+/* ─── Detail stops（inline，插在點擊的班次後面） ─── */
+function showDetail(idx, cardEl) {
+  // 若點同一張卡 → 收合
+  const wasOpen = cardEl.dataset.open === '1';
+  $$('.detail-inline').forEach(el => el.remove());
+  $$('.train-card').forEach(c => delete c.dataset.open);
+  if (wasOpen) return;
+
+  const t = window._T?.[idx]; if (!t) return;
+
+  const allZ = t.sys === 'thsr'
+    ? THSR.map(s => s.zh)
+    : TRA.flatMap(g => g.stations.map(s => s.zh));
+  const fi = allZ.indexOf(t.from), ti = allZ.indexOf(t.to);
+  const step = fi < ti ? 1 : -1;
+  const stops = [];
+  for (let i = fi; i !== ti + step; i += step) stops.push(allZ[i]);
+  const perStop = t.dur / Math.max(stops.length - 1, 1);
+  const base = new Date(`${$('#date-input').value}T${t.dep}`);
+  const priceText = t.price != null ? `$${t.price}` : '—';
+
+  const detail = document.createElement('div');
+  detail.className = 'detail-card detail-inline show';
+  detail.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+      <span>
+        <span style="font-family:var(--mono);font-size:17px;color:var(--c-accent-2)">${t.no}</span>
+        <span style="font-size:12px;color:var(--c-text-dim);margin-left:8px">${t.type} · ${t.dur} 分鐘</span>
+      </span>
+      <span style="font-family:var(--mono);font-size:17px;color:var(--c-accent)">${priceText}</span>
+    </div>
+    <div class="stops">${stops.map((nm, i) => {
+      const time = new Date(base.getTime() + i * perStop * 60000);
+      const ep = i === 0 || i === stops.length - 1;
+      return `<div class="stop ${ep ? 'endpoint' : ''}"><div class="t">${fmt(time)}</div><div class="marker"></div><div class="sname">${nm}</div></div>`;
+    }).join('')}</div>`;
+
+  cardEl.dataset.open = '1';
+  cardEl.insertAdjacentElement('afterend', detail);
+  setTimeout(() => detail.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 50);
+}
+
+/* ─── Train Type pills ─── */
+$$('.type-pill').forEach(p => p.addEventListener('click', () => {
+  $$('.type-pill').forEach(x => x.classList.remove('active'));
+  p.classList.add('active');
+  S.trainType = p.dataset.type;
+  if (window._T) doSearch();
+}));
+
+/* ─── Filter pills ─── */
+$$('.pill').forEach(p => p.addEventListener('click', () => {
+  $$('.pill').forEach(x => x.classList.remove('active'));
+  p.classList.add('active');
+  S.filter = p.dataset.filter;
+  if (window._T) doSearch();
+}));
+
+/* ─── Toast ─── */
+function showToast(msg) {
+  const t = $('#toast'); t.textContent = msg; t.classList.add('show');
+  clearTimeout(window._tt);
+  window._tt = setTimeout(() => t.classList.remove('show'), 2300);
+}
+</script>
+</body>
+</html>
