@@ -85,7 +85,6 @@
   .swap-btn:hover { background: var(--c-accent-2); }
   .swap-btn.spin { transform: rotate(180deg); }
 
-  .datetime-row { margin-top: 14px; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
   .dt-cell { background: var(--c-surface-2); padding: 10px 14px; border-radius: var(--radius-m); border: 1px solid var(--c-line); }
   .dt-cell label { display: block; font-size: 10px; color: var(--c-text-dim); letter-spacing: 2px; font-family: var(--mono); margin-bottom: 4px; }
   .dt-cell input { background: transparent; border: none; color: var(--c-text); font-size: 15px; width: 100%; outline: none; font-family: var(--mono); }
@@ -166,6 +165,7 @@
   .nav-item svg { width: 22px; height: 22px; }
 
   /* === Page switching === */
+  .page { flex: 1; overflow-y: auto; min-height: 0; }
   .page.hidden { display: none !important; }
 
   /* === Add-fav button (results header) === */
@@ -189,6 +189,9 @@
   .fav-add-from-search .label { flex: 1; font-size: 14px; color: var(--c-text-dim); }
   .fav-add-from-search .plus { font-size: 20px; color: var(--c-accent); line-height: 1; }
   .fav-empty { text-align: center; padding: 40px 20px; color: var(--c-text-dim); font-size: 14px; line-height: 1.8; }
+  .drag-handle { font-size: 17px; color: var(--c-text-dim); cursor: grab; padding: 0 8px 0 0; touch-action: none; user-select: none; line-height: 1; flex-shrink: 0; }
+  .drag-handle:active { cursor: grabbing; }
+  .fav-manage-item.is-dragging { opacity: 0.55; border-color: var(--c-accent); box-shadow: 0 6px 20px rgba(0,0,0,0.25); transform: scale(1.01); }
 
   /* =============================================
      Station Picker Modal
@@ -254,6 +257,52 @@
   /* === Toast === */
   .toast { position: fixed; top: 20px; left: 50%; transform: translateX(-50%) translateY(-80px); background: var(--c-surface-3); border: 1px solid var(--c-line); padding: 12px 20px; border-radius: 12px; font-size: 13px; z-index: 200; box-shadow: var(--shadow-2); transition: transform .35s cubic-bezier(.2,.9,.3,1.4); white-space: nowrap; }
   .toast.show { transform: translateX(-50%) translateY(0); }
+
+  /* === 淺色主題 === */
+  body.light {
+    background:
+      radial-gradient(1200px 600px at 80% -10%, rgba(255,140,66,0.04), transparent 60%),
+      radial-gradient(900px 500px at -10% 110%, rgba(31,111,178,0.06), transparent 60%),
+      #F2F5F9;
+    --c-bg:        #F2F5F9;
+    --c-surface:   #FFFFFF;
+    --c-surface-2: #EDF1F7;
+    --c-surface-3: #E3E9F2;
+    --c-line:      #CCDAE8;
+    --c-text:      #1A2840;
+    --c-text-dim:  #5A7090;
+    --shadow-1: 0 4px 16px rgba(0,0,0,0.06);
+    --shadow-2: 0 12px 40px rgba(0,0,0,0.10);
+  }
+  body.light .app { background: linear-gradient(180deg, rgba(255,255,255,0.7) 0%, rgba(242,245,249,0.98) 100%); }
+  body.light .bottom-nav { background: rgba(255,255,255,0.92); }
+  body.light .dt-cell input { color: var(--c-text); }
+
+  /* === 「現在」按鈕 === */
+  .datetime-row { margin-top: 14px; display: grid; grid-template-columns: 1fr 1fr auto; gap: 10px; }
+  .now-btn { flex-shrink: 0; background: var(--c-surface-2); border: 1px solid var(--c-line); border-radius: var(--radius-m); padding: 0 14px; color: var(--c-accent); font-size: 13px; font-weight: 700; cursor: pointer; font-family: var(--mono); transition: all .2s; white-space: nowrap; min-height: 62px; }
+  .now-btn:hover { border-color: var(--c-accent); background: rgba(255,140,66,0.06); }
+  .now-btn:active { transform: scale(0.96); }
+
+  /* === 最近查詢頁 === */
+  .history-page { margin: 18px 22px 30px; }
+  .history-item { display: flex; align-items: center; gap: 12px; background: var(--c-surface); border: 1px solid var(--c-line); border-radius: var(--radius-m); padding: 12px 14px; margin-bottom: 8px; cursor: pointer; transition: border-color .2s; }
+  .history-item:hover { border-color: var(--c-accent); }
+  .history-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .history-dot.tra  { background: var(--c-tra); }
+  .history-dot.thsr { background: var(--c-thsr); }
+  .history-info { flex: 1; }
+  .history-route { font-size: 14px; font-weight: 600; }
+  .history-meta  { font-size: 11px; color: var(--c-text-dim); font-family: var(--mono); margin-top: 3px; }
+  .history-go { color: var(--c-text-dim); font-size: 20px; line-height: 1; }
+
+  /* === 設定頁 === */
+  .settings-page { margin: 18px 22px 30px; }
+  .settings-section { margin-bottom: 28px; }
+  .settings-label { font-size: 10px; letter-spacing: 3px; color: var(--c-text-dim); font-weight: 700; text-transform: uppercase; font-family: var(--mono); margin-bottom: 12px; }
+  .theme-toggle { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .theme-btn { padding: 16px; border-radius: var(--radius-m); background: var(--c-surface-2); border: 1px solid var(--c-line); color: var(--c-text-dim); font-size: 14px; font-weight: 600; cursor: pointer; font-family: var(--font); transition: all .2s; }
+  .theme-btn.active { background: rgba(255,140,66,0.12); border-color: var(--c-accent); color: var(--c-accent-2); }
 </style>
 </head>
 <body>
@@ -298,6 +347,7 @@
     <div class="datetime-row">
       <div class="dt-cell"><label>日期 DATE</label><input type="date" id="date-input"></div>
       <div class="dt-cell"><label>時間 TIME</label><input type="time" id="time-input"></div>
+      <button class="now-btn" id="now-btn">現在</button>
     </div>
 
     <!-- 車種選擇（台鐵專用，高鐵時隱藏） -->
@@ -354,6 +404,38 @@
     </div>
   </div>
 
+  <div id="page-history" class="page hidden">
+    <div class="history-page">
+      <div class="fav-page-header">⏱ 最近查詢</div>
+      <div id="history-list"></div>
+    </div>
+  </div>
+
+  <div id="page-settings" class="page hidden">
+    <div class="settings-page">
+      <div class="fav-page-header">⚙️ 設定</div>
+      <div class="settings-section">
+        <div class="settings-label">外觀 THEME</div>
+        <div class="theme-toggle" id="settings-theme-btns">
+          <button class="theme-btn active" data-theme="dark">🌙 深色</button>
+          <button class="theme-btn" data-theme="light">☀️ 淺色</button>
+        </div>
+      </div>
+      <div class="settings-section">
+        <div class="settings-label">台鐵車種預設</div>
+        <div class="type-pills" id="settings-type-pills">
+          <button class="type-pill active" data-pref-type="all">全部</button>
+          <button class="type-pill" data-pref-type="reserved">
+            <span class="type-dot reserved"></span>對號
+          </button>
+          <button class="type-pill" data-pref-type="unreserved">
+            <span class="type-dot unreserved"></span>非對號
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <nav class="bottom-nav">
     <div class="nav-item active" data-nav="home">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19V8l8-5 8 5v11"/><path d="M9 19v-6h6v6"/></svg>首頁
@@ -361,10 +443,10 @@
     <div class="nav-item" data-nav="favs">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l3 7h7l-5.5 4.5L18 21l-6-4-6 4 1.5-7.5L2 9h7z"/></svg>最愛
     </div>
-    <div class="nav-item">
+    <div class="nav-item" data-nav="history">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>時刻
     </div>
-    <div class="nav-item">
+    <div class="nav-item" data-nav="settings">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1A2 2 0 1 1 4.3 17l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1A2 2 0 1 1 7 4.3l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>設定
     </div>
   </nav>
@@ -881,7 +963,8 @@ function renderFavManage() {
     list.innerHTML = '<div class="fav-empty">尚無常用路線<br><small>查詢後點「加入常用」即可儲存</small></div>';
   } else {
     list.innerHTML = FAVS.map((f, i) => `
-      <div class="fav-manage-item">
+      <div class="fav-manage-item" data-fav-idx="${i}">
+        <div class="drag-handle" title="拖曳排序">⠿</div>
         <div class="fav-manage-dot ${f.sys}"></div>
         <div class="fav-manage-info">
           <div class="fav-manage-route">${f.from.zh} → ${f.to.zh}</div>
@@ -894,6 +977,7 @@ function renderFavManage() {
     $$('.fav-delete-btn').forEach(btn => {
       btn.addEventListener('click', () => deleteFav(+btn.dataset.delIdx));
     });
+    initFavDrag();
   }
   if (hint) {
     const canAdd = S.from && S.to && !isFaved();
@@ -904,6 +988,43 @@ function renderFavManage() {
     }
   }
 }
+function initFavDrag() {
+  const list = $('#fav-manage-list');
+  if (!list) return;
+  let dragging = null;
+
+  list.addEventListener('pointerdown', e => {
+    if (!e.target.closest('.drag-handle')) return;
+    e.preventDefault();
+    dragging = e.target.closest('.fav-manage-item');
+    dragging.classList.add('is-dragging');
+    list.setPointerCapture(e.pointerId);
+  }, { passive: false });
+
+  list.addEventListener('pointermove', e => {
+    if (!dragging) return;
+    const siblings = [...list.querySelectorAll('.fav-manage-item')].filter(el => el !== dragging);
+    for (const el of siblings) {
+      const { top, height } = el.getBoundingClientRect();
+      if (e.clientY < top + height / 2) { el.before(dragging); return; }
+    }
+    list.append(dragging);
+  });
+
+  const endDrag = () => {
+    if (!dragging) return;
+    dragging.classList.remove('is-dragging');
+    const newOrder = [...list.querySelectorAll('.fav-manage-item')].map(el => +el.dataset.favIdx);
+    FAVS = newOrder.map(i => FAVS[i]);
+    saveFavs();
+    renderFavChips();
+    renderFavManage();
+    dragging = null;
+  };
+  list.addEventListener('pointerup', endDrag);
+  list.addEventListener('pointercancel', endDrag);
+}
+
 function updateAddFavBtn() {
   const btn = $('#add-fav-btn');
   if (!btn) return;
@@ -918,21 +1039,141 @@ function updateAddFavBtn() {
   }
 }
 function showPage(name) {
-  $('#page-home').classList.toggle('hidden', name !== 'home');
-  $('#page-favs').classList.toggle('hidden', name !== 'favs');
+  ['home','favs','history','settings'].forEach(p => {
+    $('#page-' + p)?.classList.toggle('hidden', p !== name);
+  });
   $$('.nav-item').forEach(item => item.classList.toggle('active', item.dataset.nav === name));
-  if (name === 'favs') renderFavManage();
+  if (name === 'favs')     renderFavManage();
+  if (name === 'history')  renderHistory();
+  if (name === 'settings') renderSettingsPage();
 }
 
 /* ─── Bottom nav ─── */
 $$('.nav-item').forEach(item => {
   item.addEventListener('click', () => {
     const nav = item.dataset.nav;
-    if (nav === 'home' || nav === 'favs') showPage(nav);
+    if (nav) showPage(nav);
   });
 });
 $('#add-fav-btn').addEventListener('click', addFav);
 $('#fav-add-current-btn').addEventListener('click', addFav);
+
+/* ─── 「現在」按鈕 ─── */
+$('#now-btn').addEventListener('click', () => {
+  const now = new Date();
+  $('#date-input').value = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}`;
+  $('#time-input').value = fmt(now);
+});
+
+/* ─── Settings ─── */
+const SETTINGS_KEY = 'dual_rail_settings_v1';
+const SETTINGS_DEF = { theme: 'dark', traType: 'all' };
+let SETTINGS = { ...SETTINGS_DEF };
+
+function loadSettings() {
+  try {
+    const raw = localStorage.getItem(SETTINGS_KEY);
+    if (raw) SETTINGS = { ...SETTINGS_DEF, ...JSON.parse(raw) };
+  } catch {}
+}
+function saveSettings() {
+  try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(SETTINGS)); } catch {}
+}
+function applyTheme(theme) {
+  document.body.classList.toggle('light', theme === 'light');
+  $$('#settings-theme-btns .theme-btn').forEach(b => b.classList.toggle('active', b.dataset.theme === theme));
+}
+function applyTraType(type) {
+  S.trainType = type;
+  $$('#traintype-row .type-pill').forEach(p => p.classList.toggle('active', p.dataset.type === type));
+  $$('#settings-type-pills .type-pill').forEach(p => p.classList.toggle('active', p.dataset.prefType === type));
+}
+function renderSettingsPage() {
+  applyTheme(SETTINGS.theme);
+  applyTraType(SETTINGS.traType);
+}
+// 設定頁按鈕事件
+$$('#settings-theme-btns .theme-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    SETTINGS.theme = btn.dataset.theme;
+    saveSettings();
+    applyTheme(SETTINGS.theme);
+  });
+});
+$$('#settings-type-pills .type-pill').forEach(btn => {
+  btn.addEventListener('click', () => {
+    SETTINGS.traType = btn.dataset.prefType;
+    saveSettings();
+    applyTraType(SETTINGS.traType);
+  });
+});
+
+/* ─── History ─── */
+const HISTORY_KEY = 'dual_rail_history_v1';
+const HISTORY_MAX = 10;
+let HISTORY = [];
+
+function loadHistory() {
+  try {
+    const raw = localStorage.getItem(HISTORY_KEY);
+    if (raw) HISTORY = JSON.parse(raw);
+  } catch {}
+}
+function saveHistory() {
+  try { localStorage.setItem(HISTORY_KEY, JSON.stringify(HISTORY)); } catch {}
+}
+function addHistory() {
+  if (!S.from || !S.to) return;
+  const entry = {
+    sys: S.system, from: {...S.from}, to: {...S.to},
+    date: $('#date-input').value, time: $('#time-input').value,
+    ts: Date.now(),
+  };
+  // 同路線已有記錄就先移除，再插到最前面
+  HISTORY = HISTORY.filter(h => !(h.sys === entry.sys && h.from.zh === entry.from.zh && h.to.zh === entry.to.zh));
+  HISTORY.unshift(entry);
+  if (HISTORY.length > HISTORY_MAX) HISTORY.length = HISTORY_MAX;
+  saveHistory();
+}
+function renderHistory() {
+  const list = $('#history-list');
+  if (!HISTORY.length) {
+    list.innerHTML = '<div class="fav-empty">尚無查詢記錄<br><small>查詢後自動儲存最近 10 筆</small></div>';
+    return;
+  }
+  list.innerHTML = HISTORY.map((h, i) => {
+    const sysLabel = h.sys === 'thsr' ? '高鐵' : '台鐵';
+    const dateStr  = h.date ? h.date.slice(5).replace('-','/') : '';
+    return `<div class="history-item" data-hist-idx="${i}">
+      <div class="history-dot ${h.sys}"></div>
+      <div class="history-info">
+        <div class="history-route">${h.from.zh} → ${h.to.zh}</div>
+        <div class="history-meta">${sysLabel} · ${dateStr} ${h.time}</div>
+      </div>
+      <div class="history-go">›</div>
+    </div>`;
+  }).join('');
+  $$('.history-item').forEach(item => {
+    item.addEventListener('click', () => {
+      const h = HISTORY[+item.dataset.histIdx];
+      if (!h) return;
+      $$('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === h.sys));
+      S.system = h.sys; S.from = {...h.from}; S.to = {...h.to};
+      $('#traintype-row').style.display = h.sys === 'tra' ? '' : 'none';
+      setBtn('from', S.from); setBtn('to', S.to);
+      $('#date-input').value = h.date;
+      $('#time-input').value = h.time;
+      showPage('home');
+      doSearch();
+    });
+  });
+}
+
+// 初始化
+loadSettings();
+applyTheme(SETTINGS.theme);
+applyTraType(SETTINGS.traType);
+loadHistory();
 
 loadFavs();
 renderFavChips();
@@ -996,6 +1237,7 @@ async function fetchFromTDX(dateVal, timeVal) {
       return;
     }
     renderResults(trains);
+    addHistory();
 
   } catch (err) {
     console.error(err);
@@ -1242,11 +1484,12 @@ function showDetail(idx, cardEl) {
   setTimeout(() => detail.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 50);
 }
 
-/* ─── Train Type pills ─── */
-$$('.type-pill').forEach(p => p.addEventListener('click', () => {
-  $$('.type-pill').forEach(x => x.classList.remove('active'));
-  p.classList.add('active');
-  S.trainType = p.dataset.type;
+/* ─── Train Type pills（首頁） ─── */
+$$('#traintype-row .type-pill').forEach(p => p.addEventListener('click', () => {
+  const type = p.dataset.type;
+  applyTraType(type);
+  SETTINGS.traType = type;
+  saveSettings();
   if (window._T) doSearch();
 }));
 

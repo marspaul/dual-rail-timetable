@@ -8,6 +8,10 @@
  *   3. wrangler deploy
  *
  * Routes:
+ *   GET /stations/tra              → TRA 站牌 ID map
+ *   GET /stations/thsr             → THSR 站牌 ID map
+ *   GET /tra-fare/:from/:to        → TRA 票價
+ *   GET /thsr-fare/:from/:to       → THSR 票價
  *   GET /tra/:fromId/:toId/:date   → TRA DailyTrainTimetable OD
  *   GET /thsr/:fromId/:toId/:date  → THSR DailyTimetable OD
  */
@@ -21,18 +25,24 @@ const CORS = {
   'Access-Control-Allow-Headers': 'Content-Type',
 };
 
-// Module-level token cache（per isolate，Worker 冷啟動後重置）
+// 允許的來源（Referer 或 Origin）
+const ALLOWED_HOSTS = ['marspaul.github.io', 'localhost', '127.0.0.1'];
+
+// Module-level token cache
 let _token = null;
 let _tokenExpiry = 0;
 
-// TRA 站牌快取（6 小時），多個裝置共用同一份 API 呼叫
-let _traStationMap = null;
+// TRA 站牌 module-level 快取（6 小時）
+let _traStationMap    = null;
 let _traStationExpiry = 0;
-const STATION_TTL = 6 * 60 * 60 * 1000;
+const STATION_TTL_MS  = 6 * 60 * 60 * 1000;
+
+// Cloudflare Cache TTL（秒）
+const TTL_FARE      = 24 * 60 * 60; // 票價：24 小時
+const TTL_TIMETABLE =  2 * 60 * 60; // 時刻表：2 小時
 
 async function getToken(env) {
   if (_token && Date.now() < _tokenExpiry) return _token;
-
   const res = await fetch(TDX_TOKEN_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -42,31 +52,53 @@ async function getToken(env) {
       client_secret: env.TDX_CLIENT_SECRET,
     }),
   });
-
   if (!res.ok) throw new Error(`Token fetch failed: ${res.status}`);
   const { access_token, expires_in } = await res.json();
   _token       = access_token;
-  _tokenExpiry = Date.now() + (expires_in - 60) * 1000; // 提前 60s 過期
+  _tokenExpiry = Date.now() + (expires_in - 60) * 1000;
   return _token;
 }
 
-function jsonResp(data, status = 200) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { ...CORS, 'Content-Type': 'application/json; charset=utf-8' },
-  });
+function jsonResp(data, status = 200, ttl = 0, cacheKey = null, ctx = null) {
+  const headers = {
+    ...CORS,
+    'Content-Type': 'application/json; charset=utf-8',
+  };
+  if (ttl > 0) headers['Cache-Control'] = `public, max-age=${ttl}`;
+  const resp = new Response(JSON.stringify(data), { status, headers });
+  if (ttl > 0 && cacheKey && ctx) {
+    ctx.waitUntil(caches.default.put(cacheKey, resp.clone()));
+  }
+  return resp;
 }
 
 export default {
-  async fetch(request, env) {
-    // Preflight
+  async fetch(request, env, ctx) {
+    // ── Preflight ──
     if (request.method === 'OPTIONS') {
       return new Response(null, { headers: CORS });
     }
 
-    const { pathname } = new URL(request.url);
+    // ── Referer / Origin 防盜用 ──
+    // file:// 時瀏覽器送 Origin: "null"，視同無 origin 放行
+    const referer = request.headers.get('referer') || '';
+    const origin  = request.headers.get('origin')  || '';
+    const hasOrigin = origin && origin !== 'null';
+    if (hasOrigin && !ALLOWED_HOSTS.some(h => origin.includes(h))) {
+      return new Response('Forbidden', { status: 403, headers: CORS });
+    }
+    if (!hasOrigin && referer && !ALLOWED_HOSTS.some(h => referer.includes(h))) {
+      return new Response('Forbidden', { status: 403, headers: CORS });
+    }
 
-    // 高鐵站牌（THSR v2 API 4 位數 ID）
+    const url      = new URL(request.url);
+    const { pathname } = url;
+
+    // ── Cloudflare Cache helper ──
+    const cacheKey = new Request(request.url);
+    async function getCache()        { return caches.default.match(cacheKey); }
+
+    // ── 高鐵站牌（hardcoded，直接回傳） ──
     if (pathname === '/stations/thsr') {
       return jsonResp({
         '南港':'0990','台北':'1000','板橋':'1010','桃園':'1020',
@@ -75,7 +107,7 @@ export default {
       });
     }
 
-    // 台鐵站牌（從 TDX 動態取得，Worker 端快取 6 小時）
+    // ── 台鐵站牌（module-level 快取 6h） ──
     if (pathname === '/stations/tra') {
       try {
         if (_traStationMap && Date.now() < _traStationExpiry) {
@@ -86,7 +118,7 @@ export default {
           headers: { Authorization: `Bearer ${token}` },
         });
         if (!res.ok) return jsonResp({ error: `TDX TRA Station API ${res.status}` }, res.status);
-        const raw = await res.json();
+        const raw  = await res.json();
         const list = Array.isArray(raw) ? raw : (raw.Stations || []);
         const map  = {};
         for (const s of list) {
@@ -94,16 +126,19 @@ export default {
           if (name && s.StationID) map[name] = s.StationID;
         }
         _traStationMap    = map;
-        _traStationExpiry = Date.now() + STATION_TTL;
+        _traStationExpiry = Date.now() + STATION_TTL_MS;
         return jsonResp(map);
       } catch (err) {
         return jsonResp({ error: err.message }, 500);
       }
     }
 
-    // 票價：/tra-fare/:fromId/:toId 或 /thsr-fare/:fromId/:toId
+    // ── 票價：/tra-fare/:from/:to 或 /thsr-fare/:from/:to（CF Cache 24h） ──
     const fareM = pathname.match(/^\/(tra|thsr)-fare\/([^/]+)\/([^/]+)$/);
     if (fareM) {
+      const cached = await getCache();
+      if (cached) return cached;
+
       const [, rail, fromId, toId] = fareM;
       try {
         const token  = await getToken(env);
@@ -112,48 +147,38 @@ export default {
           : `https://tdx.transportdata.tw/api/basic/v2/Rail/THSR/ODFare/${fromId}/to/${toId}?$format=JSON`;
         const res = await fetch(apiUrl, { headers: { Authorization: `Bearer ${token}` } });
         if (!res.ok) return jsonResp({ error: `ODFare API ${res.status}` }, res.status);
-        return jsonResp(await res.json());
+        return jsonResp(await res.json(), 200, TTL_FARE, cacheKey, ctx);
       } catch (err) {
         return jsonResp({ error: err.message }, 500);
       }
     }
 
-    // 路由解析：/tra/:fromId/:toId/:date 或 /thsr/:fromId/:toId/:date
+    // ── 時刻表：/tra/:from/:to/:date 或 /thsr/:from/:to/:date（CF Cache 2h） ──
     const m = pathname.match(/^\/(tra|thsr)\/([^/]+)\/([^/]+)\/([^/]+)$/);
     if (!m) {
-      return jsonResp({ error: 'Invalid route. Use /tra/:from/:to/:date or /thsr/:from/:to/:date' }, 404);
+      return jsonResp({ error: 'Invalid route' }, 404);
     }
 
     const [, rail, fromId, toId, date] = m;
-
-    // 驗證日期格式 YYYY-MM-DD
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
       return jsonResp({ error: 'Date must be YYYY-MM-DD' }, 400);
     }
 
+    const cached = await getCache();
+    if (cached) return cached;
+
     try {
       const token = await getToken(env);
+      const apiUrl = rail === 'tra'
+        ? `${TDX_BASE}/TRA/DailyTrainTimetable/OD/${fromId}/to/${toId}/${date}?$format=JSON`
+        : `https://tdx.transportdata.tw/api/basic/v2/Rail/THSR/DailyTimetable/OD/${fromId}/to/${toId}/${date}?$format=JSON`;
 
-      let apiUrl;
-      if (rail === 'tra') {
-        apiUrl = `${TDX_BASE}/TRA/DailyTrainTimetable/OD/${fromId}/to/${toId}/${date}?$format=JSON`;
-      } else {
-        // THSR 使用 v2 API，站 ID 為 1-12
-        apiUrl = `https://tdx.transportdata.tw/api/basic/v2/Rail/THSR/DailyTimetable/OD/${fromId}/to/${toId}/${date}?$format=JSON`;
-      }
-
-      const res = await fetch(apiUrl, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-
+      const res = await fetch(apiUrl, { headers: { Authorization: `Bearer ${token}` } });
       if (!res.ok) {
         const text = await res.text();
-        return jsonResp({ error: `TDX API error ${res.status}`, url: apiUrl, detail: text }, res.status);
+        return jsonResp({ error: `TDX API error ${res.status}`, detail: text }, res.status);
       }
-
-      const data = await res.json();
-      return jsonResp(data);
-
+      return jsonResp(await res.json(), 200, TTL_TIMETABLE, cacheKey, ctx);
     } catch (err) {
       return jsonResp({ error: err.message }, 500);
     }
