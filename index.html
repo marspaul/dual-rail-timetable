@@ -624,6 +624,11 @@ const TDX_CONFIG = {
   PROXY_URL: 'https://tdx-proxy.marspaul-li.workers.dev',
 };
 
+// 統一加上 X-App-Id 暗號的 fetch wrapper
+function secureFetch(url) {
+  return fetch(url, { headers: { 'X-App-Id': 'dual-rail-timetable-v2' } });
+}
+
 // 站 ID 動態從 TDX 取得，這裡只是備用 fallback（啟動時會被覆蓋）
 let TRA_STATION_ID  = {};
 let THSR_STATION_ID = {};
@@ -670,8 +675,8 @@ function fetchStations() {
     removeStationErrorBanner();
     try {
       const [traRes, thsrRes] = await Promise.all([
-        fetch(`${TDX_CONFIG.PROXY_URL}/stations/tra`),
-        fetch(`${TDX_CONFIG.PROXY_URL}/stations/thsr`),
+        secureFetch(`${TDX_CONFIG.PROXY_URL}/stations/tra`),
+        secureFetch(`${TDX_CONFIG.PROXY_URL}/stations/thsr`),
       ]);
       const traData  = await traRes.json();
       const thsrData = await thsrRes.json();
@@ -1256,8 +1261,8 @@ async function fetchTra(dateVal, timeVal) {
 
   // 時刻表 + 票價同時查
   const [ttRes, fareRes] = await Promise.all([
-    fetch(`${TDX_CONFIG.PROXY_URL}/tra/${fromId}/${toId}/${dateVal}`),
-    fetch(`${TDX_CONFIG.PROXY_URL}/tra-fare/${fromId}/${toId}`),
+    secureFetch(`${TDX_CONFIG.PROXY_URL}/tra/${fromId}/${toId}/${dateVal}`),
+    secureFetch(`${TDX_CONFIG.PROXY_URL}/tra-fare/${fromId}/${toId}`),
   ]);
   const json     = await ttRes.json();
   const fareJson = await fareRes.json();
@@ -1314,8 +1319,8 @@ async function fetchThsr(dateVal, timeVal) {
 
   // 時刻表 + 票價同時查
   const [ttRes, fareRes] = await Promise.all([
-    fetch(`${TDX_CONFIG.PROXY_URL}/thsr/${fromId}/${toId}/${dateVal}`),
-    fetch(`${TDX_CONFIG.PROXY_URL}/thsr-fare/${fromId}/${toId}`),
+    secureFetch(`${TDX_CONFIG.PROXY_URL}/thsr/${fromId}/${toId}/${dateVal}`),
+    secureFetch(`${TDX_CONFIG.PROXY_URL}/thsr-fare/${fromId}/${toId}`),
   ]);
   const json     = await ttRes.json();
   const fareJson = await fareRes.json();

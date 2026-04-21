@@ -19,14 +19,17 @@
 const TDX_TOKEN_URL = 'https://tdx.transportdata.tw/auth/realms/TDXConnect/protocol/openid-connect/token';
 const TDX_BASE      = 'https://tdx.transportdata.tw/api/basic/v3/Rail';
 
-const CORS = {
-  'Access-Control-Allow-Origin':  '*',
-  'Access-Control-Allow-Methods': 'GET, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type',
-};
+// 允許的來源（精確匹配，防止 subdomain 偽造）
+const ALLOWED_ORIGINS = ['https://marspaul.github.io'];
 
-// 允許的來源（僅 GitHub Pages，本地 file:// 一律擋）
-const ALLOWED_HOSTS = ['marspaul.github.io'];
+// 前端暗號（防止無 origin 的工具直接呼叫）
+const APP_SECRET_ID = 'dual-rail-timetable-v2';
+
+// 基本 CORS（Origin 動態決定）
+const CORS_BASE = {
+  'Access-Control-Allow-Methods': 'GET, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, X-App-Id',
+};
 
 // Module-level token cache
 let _token = null;
@@ -59,9 +62,10 @@ async function getToken(env) {
   return _token;
 }
 
-function jsonResp(data, status = 200, ttl = 0, cacheKey = null, ctx = null) {
+function jsonResp(data, status = 200, ttl = 0, cacheKey = null, ctx = null, origin = null) {
   const headers = {
-    ...CORS,
+    ...CORS_BASE,
+    'Access-Control-Allow-Origin': origin || ALLOWED_ORIGINS[0],
     'Content-Type': 'application/json; charset=utf-8',
   };
   if (ttl > 0) headers['Cache-Control'] = `public, max-age=${ttl}`;
@@ -74,18 +78,24 @@ function jsonResp(data, status = 200, ttl = 0, cacheKey = null, ctx = null) {
 
 export default {
   async fetch(request, env, ctx) {
+    const origin = request.headers.get('origin') || '';
+    const appId  = request.headers.get('x-app-id') || '';
+
     // ── Preflight ──
     if (request.method === 'OPTIONS') {
-      return new Response(null, { headers: CORS });
+      return new Response(null, {
+        headers: { ...CORS_BASE, 'Access-Control-Allow-Origin': origin },
+      });
     }
 
-    // ── Referer / Origin 防盜用 ──
-    // file:// 時瀏覽器送 Origin: "null"，視同無 origin 放行
-    const referer = request.headers.get('referer') || '';
-    const origin  = request.headers.get('origin')  || '';
-    const hasOrigin = origin && origin !== 'null';
-    if (!hasOrigin || !ALLOWED_HOSTS.some(h => origin.includes(h))) {
-      return new Response('Forbidden', { status: 403, headers: CORS });
+    // ── 安全性檢查：精確 origin + 暗號 ──
+    const isAllowedOrigin = ALLOWED_ORIGINS.includes(origin);
+    const isAllowedApp    = appId === APP_SECRET_ID;
+    if (!isAllowedOrigin || !isAllowedApp) {
+      return new Response('Forbidden', {
+        status: 403,
+        headers: { ...CORS_BASE, 'Access-Control-Allow-Origin': origin || ALLOWED_ORIGINS[0] },
+      });
     }
 
     const url      = new URL(request.url);
@@ -93,7 +103,7 @@ export default {
 
     // ── Cloudflare Cache helper ──
     const cacheKey = new Request(request.url);
-    async function getCache()        { return caches.default.match(cacheKey); }
+    async function getCache() { return caches.default.match(cacheKey); }
 
     // ── 高鐵站牌（hardcoded，直接回傳） ──
     if (pathname === '/stations/thsr') {
@@ -101,20 +111,20 @@ export default {
         '南港':'0990','台北':'1000','板橋':'1010','桃園':'1020',
         '新竹':'1030','苗栗':'1035','台中':'1040','彰化':'1043',
         '雲林':'1047','嘉義':'1050','台南':'1060','左營':'1070',
-      });
+      }, 200, 0, null, null, origin);
     }
 
     // ── 台鐵站牌（module-level 快取 6h） ──
     if (pathname === '/stations/tra') {
       try {
         if (_traStationMap && Date.now() < _traStationExpiry) {
-          return jsonResp(_traStationMap);
+          return jsonResp(_traStationMap, 200, 0, null, null, origin);
         }
         const token = await getToken(env);
         const res   = await fetch(`${TDX_BASE}/TRA/Station?$format=JSON`, {
           headers: { Authorization: `Bearer ${token}` },
         });
-        if (!res.ok) return jsonResp({ error: `TDX TRA Station API ${res.status}` }, res.status);
+        if (!res.ok) return jsonResp({ error: `TDX TRA Station API ${res.status}` }, res.status, 0, null, null, origin);
         const raw  = await res.json();
         const list = Array.isArray(raw) ? raw : (raw.Stations || []);
         const map  = {};
@@ -124,9 +134,9 @@ export default {
         }
         _traStationMap    = map;
         _traStationExpiry = Date.now() + STATION_TTL_MS;
-        return jsonResp(map);
+        return jsonResp(map, 200, 0, null, null, origin);
       } catch (err) {
-        return jsonResp({ error: err.message }, 500);
+        return jsonResp({ error: err.message }, 500, 0, null, null, origin);
       }
     }
 
@@ -143,22 +153,22 @@ export default {
           ? `${TDX_BASE}/TRA/ODFare/${fromId}/to/${toId}?$format=JSON`
           : `https://tdx.transportdata.tw/api/basic/v2/Rail/THSR/ODFare/${fromId}/to/${toId}?$format=JSON`;
         const res = await fetch(apiUrl, { headers: { Authorization: `Bearer ${token}` } });
-        if (!res.ok) return jsonResp({ error: `ODFare API ${res.status}` }, res.status);
-        return jsonResp(await res.json(), 200, TTL_FARE, cacheKey, ctx);
+        if (!res.ok) return jsonResp({ error: `ODFare API ${res.status}` }, res.status, 0, null, null, origin);
+        return jsonResp(await res.json(), 200, TTL_FARE, cacheKey, ctx, origin);
       } catch (err) {
-        return jsonResp({ error: err.message }, 500);
+        return jsonResp({ error: err.message }, 500, 0, null, null, origin);
       }
     }
 
     // ── 時刻表：/tra/:from/:to/:date 或 /thsr/:from/:to/:date（CF Cache 2h） ──
     const m = pathname.match(/^\/(tra|thsr)\/([^/]+)\/([^/]+)\/([^/]+)$/);
     if (!m) {
-      return jsonResp({ error: 'Invalid route' }, 404);
+      return jsonResp({ error: 'Invalid route' }, 404, 0, null, null, origin);
     }
 
     const [, rail, fromId, toId, date] = m;
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-      return jsonResp({ error: 'Date must be YYYY-MM-DD' }, 400);
+      return jsonResp({ error: 'Date must be YYYY-MM-DD' }, 400, 0, null, null, origin);
     }
 
     const cached = await getCache();
@@ -173,11 +183,11 @@ export default {
       const res = await fetch(apiUrl, { headers: { Authorization: `Bearer ${token}` } });
       if (!res.ok) {
         const text = await res.text();
-        return jsonResp({ error: `TDX API error ${res.status}`, detail: text }, res.status);
+        return jsonResp({ error: `TDX API error ${res.status}`, detail: text }, res.status, 0, null, null, origin);
       }
-      return jsonResp(await res.json(), 200, TTL_TIMETABLE, cacheKey, ctx);
+      return jsonResp(await res.json(), 200, TTL_TIMETABLE, cacheKey, ctx, origin);
     } catch (err) {
-      return jsonResp({ error: err.message }, 500);
+      return jsonResp({ error: err.message }, 500, 0, null, null, origin);
     }
   },
 };
