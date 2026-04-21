@@ -62,10 +62,15 @@ async function getToken(env) {
   return _token;
 }
 
+// null origin (file://) 要用 * 才能讓瀏覽器接受
+function corsOrigin(origin) {
+  return (!origin || origin === 'null') ? '*' : origin;
+}
+
 function jsonResp(data, status = 200, ttl = 0, cacheKey = null, ctx = null, origin = null) {
   const headers = {
     ...CORS_BASE,
-    'Access-Control-Allow-Origin': origin || ALLOWED_ORIGINS[0],
+    'Access-Control-Allow-Origin': corsOrigin(origin),
     'Content-Type': 'application/json; charset=utf-8',
   };
   if (ttl > 0) headers['Cache-Control'] = `public, max-age=${ttl}`;
@@ -84,7 +89,7 @@ export default {
     // ── Preflight ──
     if (request.method === 'OPTIONS') {
       return new Response(null, {
-        headers: { ...CORS_BASE, 'Access-Control-Allow-Origin': origin },
+        headers: { ...CORS_BASE, 'Access-Control-Allow-Origin': corsOrigin(origin) },
       });
     }
 
@@ -94,7 +99,7 @@ export default {
     if (!isAllowedOrigin || !isAllowedApp) {
       return new Response('Forbidden', {
         status: 403,
-        headers: { ...CORS_BASE, 'Access-Control-Allow-Origin': origin || ALLOWED_ORIGINS[0] },
+        headers: { ...CORS_BASE, 'Access-Control-Allow-Origin': corsOrigin(origin) },
       });
     }
 
@@ -103,7 +108,14 @@ export default {
 
     // ── Cloudflare Cache helper ──
     const cacheKey = new Request(request.url);
-    async function getCache() { return caches.default.match(cacheKey); }
+    // 快取命中時動態替換 ACAO，避免舊 origin 的快取回傳錯誤 header
+    async function getCache() {
+      const cached = await caches.default.match(cacheKey);
+      if (!cached) return null;
+      const headers = new Headers(cached.headers);
+      headers.set('Access-Control-Allow-Origin', corsOrigin(origin));
+      return new Response(cached.body, { status: cached.status, headers });
+    }
 
     // ── 高鐵站牌（hardcoded，直接回傳） ──
     if (pathname === '/stations/thsr') {
@@ -135,6 +147,24 @@ export default {
         _traStationMap    = map;
         _traStationExpiry = Date.now() + STATION_TTL_MS;
         return jsonResp(map, 200, 0, null, null, origin);
+      } catch (err) {
+        return jsonResp({ error: err.message }, 500, 0, null, null, origin);
+      }
+    }
+
+    // ── 台鐵完整停靠站：/tra-stops/:trainNo/:date（CF Cache 24h） ──
+    const stopsM = pathname.match(/^\/tra-stops\/([^/]+)\/([^/]+)$/);
+    if (stopsM) {
+      const cached = await getCache();
+      if (cached) return cached;
+
+      const [, trainNo, date] = stopsM;
+      try {
+        const token  = await getToken(env);
+        const apiUrl = `${TDX_BASE}/TRA/DailyTrainTimetable/TrainDate/${date}?$filter=TrainInfo/TrainNo eq '${trainNo}'&$format=JSON`;
+        const res = await fetch(apiUrl, { headers: { Authorization: `Bearer ${token}` } });
+        if (!res.ok) return jsonResp({ error: `TRA stops API ${res.status}` }, res.status, 0, null, null, origin);
+        return jsonResp(await res.json(), 200, TTL_FARE, cacheKey, ctx, origin);
       } catch (err) {
         return jsonResp({ error: err.message }, 500, 0, null, null, origin);
       }

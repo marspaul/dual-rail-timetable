@@ -1465,7 +1465,9 @@ function renderResults(trains) {
 }
 
 /* ─── Detail stops（inline，插在點擊的班次後面） ─── */
-function showDetail(idx, cardEl) {
+const _stopsCache = {}; // { "trainNo:date": StopTimes[] }
+
+async function showDetail(idx, cardEl) {
   // 若點同一張卡 → 收合
   const wasOpen = cardEl.dataset.open === '1';
   $$('.detail-inline').forEach(el => el.remove());
@@ -1473,36 +1475,13 @@ function showDetail(idx, cardEl) {
   if (wasOpen) return;
 
   const t = window._T?.[idx]; if (!t) return;
+  cardEl.dataset.open = '1';
 
   const priceText = t.price != null ? `$${t.price}` : '—';
-
-  // 優先用 API 回傳的實際停靠站（含真實時刻）
-  // THSR OD API 不回傳中間站，fallback 用硬編碼列表插值
-  let stopRows;
-  if (t.stopTimes && t.stopTimes.length) {
-    stopRows = t.stopTimes.map((s, i) => {
-      const ep = i === 0 || i === t.stopTimes.length - 1;
-      return `<div class="stop ${ep ? 'endpoint' : ''}"><div class="t">${s.time}</div><div class="marker"></div><div class="sname">${s.name}</div></div>`;
-    }).join('');
-  } else {
-    const allZ = t.sys === 'thsr'
-      ? THSR.map(s => s.zh)
-      : TRA.flatMap(g => g.stations.map(s => s.zh));
-    const fi = allZ.indexOf(t.from), ti = allZ.indexOf(t.to);
-    const step = fi < ti ? 1 : -1;
-    const stops = [];
-    for (let i = fi; i !== ti + step; i += step) stops.push(allZ[i]);
-    const perStop = t.dur / Math.max(stops.length - 1, 1);
-    const base = new Date(`${$('#date-input').value}T${t.dep}`);
-    stopRows = stops.map((nm, i) => {
-      const time = new Date(base.getTime() + i * perStop * 60000);
-      const ep = i === 0 || i === stops.length - 1;
-      return `<div class="stop ${ep ? 'endpoint' : ''}"><div class="t">${fmt(time)}</div><div class="marker"></div><div class="sname">${nm}</div></div>`;
-    }).join('');
-  }
-
   const detail = document.createElement('div');
   detail.className = 'detail-card detail-inline show';
+
+  // Header 先插入，stops 區塊顯示 loading
   detail.innerHTML = `
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
       <span>
@@ -1511,11 +1490,60 @@ function showDetail(idx, cardEl) {
       </span>
       <span style="font-family:var(--mono);font-size:17px;color:var(--c-accent)">${priceText}</span>
     </div>
-    <div class="stops">${stopRows}</div>`;
-
-  cardEl.dataset.open = '1';
+    <div class="stops" id="detail-stops-${idx}">
+      <div style="color:var(--c-text-dim);font-size:13px;padding:8px 0">載入停靠站…</div>
+    </div>`;
   cardEl.insertAdjacentElement('afterend', detail);
   setTimeout(() => detail.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 50);
+
+  // TRA：呼叫完整班次 API 取得實際停靠站
+  if (t.sys === 'tra') {
+    try {
+      const date = $('#date-input').value;
+      const cacheKey = `${t.no}:${date}`;
+      if (!_stopsCache[cacheKey]) {
+        const res  = await secureFetch(`${TDX_CONFIG.PROXY_URL}/tra-stops/${t.no}/${date}`);
+        const json = await res.json();
+        if (json.error) throw new Error(json.error);
+        _stopsCache[cacheKey] = json.TrainTimetables?.[0]?.StopTimes || [];
+      }
+      const allStops = _stopsCache[cacheKey];
+      const fromIdx = allStops.findIndex(s => s.StationName?.Zh_tw?.replace(/臺/g, '台') === t.from);
+      const toIdx   = allStops.findIndex(s => s.StationName?.Zh_tw?.replace(/臺/g, '台') === t.to);
+      if (fromIdx >= 0 && toIdx >= 0) {
+        const step = fromIdx < toIdx ? 1 : -1;
+        const stopRows = [];
+        for (let i = fromIdx; i !== toIdx + step; i += step) {
+          const s  = allStops[i];
+          const nm = (s.StationName?.Zh_tw || s.StationName || '').replace(/臺/g, '台');
+          const tm = s.DepartureTime || s.ArrivalTime || '';
+          const ep = i === fromIdx || i === toIdx;
+          stopRows.push(`<div class="stop ${ep ? 'endpoint' : ''}"><div class="t">${tm}</div><div class="marker"></div><div class="sname">${nm}</div></div>`);
+        }
+        const stopsEl = detail.querySelector(`#detail-stops-${idx}`);
+        if (stopsEl) stopsEl.innerHTML = stopRows.join('');
+        return;
+      }
+    } catch (e) { /* fallback to hardcoded list */ }
+  }
+
+  // THSR 或 TRA fallback：用硬編碼列表插值（估算時間）
+  const allZ = t.sys === 'thsr'
+    ? THSR.map(s => s.zh)
+    : TRA.flatMap(g => g.stations.map(s => s.zh));
+  const fi = allZ.indexOf(t.from), ti = allZ.indexOf(t.to);
+  const step = fi < ti ? 1 : -1;
+  const stops = [];
+  for (let i = fi; i !== ti + step; i += step) stops.push(allZ[i]);
+  const perStop = t.dur / Math.max(stops.length - 1, 1);
+  const base = new Date(`${$('#date-input').value}T${t.dep}`);
+  const fallbackRows = stops.map((nm, i) => {
+    const time = new Date(base.getTime() + i * perStop * 60000);
+    const ep = i === 0 || i === stops.length - 1;
+    return `<div class="stop ${ep ? 'endpoint' : ''}"><div class="t">${fmt(time)}</div><div class="marker"></div><div class="sname">${nm}</div></div>`;
+  }).join('');
+  const stopsEl = detail.querySelector(`#detail-stops-${idx}`);
+  if (stopsEl) stopsEl.innerHTML = fallbackRows;
 }
 
 /* ─── Train Type pills（首頁） ─── */
