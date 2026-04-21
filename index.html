@@ -1284,10 +1284,12 @@ async function fetchTra(dateVal, timeVal) {
   return timetables.map(tt => {
     const info  = tt.TrainInfo;
     const stops = tt.StopTimes;
-    const fromStop = stops.find(s => s.StationID === fromId);
-    const toStop   = stops.find(s => s.StationID === toId);
-    if (!fromStop || !toStop) return null;
+    const fromIdx = stops.findIndex(s => s.StationID === fromId);
+    const toIdx   = stops.findIndex(s => s.StationID === toId);
+    if (fromIdx < 0 || toIdx < 0) return null;
 
+    const fromStop = stops[fromIdx];
+    const toStop   = stops[toIdx];
     const dep = fromStop.DepartureTime || fromStop.ArrivalTime;
     const arr = toStop.ArrivalTime     || toStop.DepartureTime;
     const [dh, dm] = dep.split(':').map(Number);
@@ -1295,6 +1297,16 @@ async function fetchTra(dateVal, timeVal) {
     const dur = (ah * 60 + am) - (dh * 60 + dm);
     const typeName = info.TrainTypeName?.Zh_tw || info.TrainTypeName || '';
     const fareKey  = `${info.Direction}_${info.TrainTypeCode}`;
+
+    // 擷取實際經停站（含真實時刻）
+    const step = fromIdx < toIdx ? 1 : -1;
+    const stopTimes = [];
+    for (let i = fromIdx; i !== toIdx + step; i += step) {
+      const s = stops[i];
+      const nm = (s.StationName?.Zh_tw || s.StationName || '').replace(/臺/g, '台');
+      const t  = s.DepartureTime || s.ArrivalTime || '';
+      stopTimes.push({ name: nm, time: t });
+    }
 
     return {
       no:   info.TrainNo,
@@ -1307,6 +1319,7 @@ async function fetchTra(dateVal, timeVal) {
       from: S.from.zh, to: S.to.zh,
       late: false, lateMin: 0,
       reserved: RESERVED_TYPES.some(t => typeName.includes(t)),
+      stopTimes,
     };
   }).filter(t => t && t.depMin >= filterMin)
     .sort((a, b) => a.depMin - b.depMin);
@@ -1461,16 +1474,32 @@ function showDetail(idx, cardEl) {
 
   const t = window._T?.[idx]; if (!t) return;
 
-  const allZ = t.sys === 'thsr'
-    ? THSR.map(s => s.zh)
-    : TRA.flatMap(g => g.stations.map(s => s.zh));
-  const fi = allZ.indexOf(t.from), ti = allZ.indexOf(t.to);
-  const step = fi < ti ? 1 : -1;
-  const stops = [];
-  for (let i = fi; i !== ti + step; i += step) stops.push(allZ[i]);
-  const perStop = t.dur / Math.max(stops.length - 1, 1);
-  const base = new Date(`${$('#date-input').value}T${t.dep}`);
   const priceText = t.price != null ? `$${t.price}` : '—';
+
+  // 優先用 API 回傳的實際停靠站（含真實時刻）
+  // THSR OD API 不回傳中間站，fallback 用硬編碼列表插值
+  let stopRows;
+  if (t.stopTimes && t.stopTimes.length) {
+    stopRows = t.stopTimes.map((s, i) => {
+      const ep = i === 0 || i === t.stopTimes.length - 1;
+      return `<div class="stop ${ep ? 'endpoint' : ''}"><div class="t">${s.time}</div><div class="marker"></div><div class="sname">${s.name}</div></div>`;
+    }).join('');
+  } else {
+    const allZ = t.sys === 'thsr'
+      ? THSR.map(s => s.zh)
+      : TRA.flatMap(g => g.stations.map(s => s.zh));
+    const fi = allZ.indexOf(t.from), ti = allZ.indexOf(t.to);
+    const step = fi < ti ? 1 : -1;
+    const stops = [];
+    for (let i = fi; i !== ti + step; i += step) stops.push(allZ[i]);
+    const perStop = t.dur / Math.max(stops.length - 1, 1);
+    const base = new Date(`${$('#date-input').value}T${t.dep}`);
+    stopRows = stops.map((nm, i) => {
+      const time = new Date(base.getTime() + i * perStop * 60000);
+      const ep = i === 0 || i === stops.length - 1;
+      return `<div class="stop ${ep ? 'endpoint' : ''}"><div class="t">${fmt(time)}</div><div class="marker"></div><div class="sname">${nm}</div></div>`;
+    }).join('');
+  }
 
   const detail = document.createElement('div');
   detail.className = 'detail-card detail-inline show';
@@ -1482,11 +1511,7 @@ function showDetail(idx, cardEl) {
       </span>
       <span style="font-family:var(--mono);font-size:17px;color:var(--c-accent)">${priceText}</span>
     </div>
-    <div class="stops">${stops.map((nm, i) => {
-      const time = new Date(base.getTime() + i * perStop * 60000);
-      const ep = i === 0 || i === stops.length - 1;
-      return `<div class="stop ${ep ? 'endpoint' : ''}"><div class="t">${fmt(time)}</div><div class="marker"></div><div class="sname">${nm}</div></div>`;
-    }).join('')}</div>`;
+    <div class="stops">${stopRows}</div>`;
 
   cardEl.dataset.open = '1';
   cardEl.insertAdjacentElement('afterend', detail);
