@@ -25,8 +25,8 @@ const CORS = {
   'Access-Control-Allow-Headers': 'Content-Type',
 };
 
-// 允許的來源（Referer 或 Origin）
-const ALLOWED_HOSTS = ['marspaul.github.io', 'localhost', '127.0.0.1'];
+// 允許的來源（僅 GitHub Pages，本地 file:// 一律擋）
+const ALLOWED_HOSTS = ['marspaul.github.io'];
 
 // Module-level token cache
 let _token = null;
@@ -84,10 +84,7 @@ export default {
     const referer = request.headers.get('referer') || '';
     const origin  = request.headers.get('origin')  || '';
     const hasOrigin = origin && origin !== 'null';
-    if (hasOrigin && !ALLOWED_HOSTS.some(h => origin.includes(h))) {
-      return new Response('Forbidden', { status: 403, headers: CORS });
-    }
-    if (!hasOrigin && referer && !ALLOWED_HOSTS.some(h => referer.includes(h))) {
+    if (!hasOrigin || !ALLOWED_HOSTS.some(h => origin.includes(h))) {
       return new Response('Forbidden', { status: 403, headers: CORS });
     }
 
