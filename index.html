@@ -1522,8 +1522,9 @@ async function showDetail(idx, cardEl) {
         const stopRows = [];
         for (let i = fromIdx; i !== toIdx + step; i += step) {
           const s  = allStops[i];
-          const nm = (s.StationName?.Zh_tw || s.StationName || '').replace(/臺/g, '台');
-          const tm = s.DepartureTime || s.ArrivalTime || '';
+          const nm = normName(s.StationName?.Zh_tw || '');
+          // 終點站顯示抵達時間，其餘顯示發車時間
+          const tm = (i === toIdx ? (s.ArrivalTime || s.DepartureTime) : (s.DepartureTime || s.ArrivalTime)) || '';
           const ep = i === fromIdx || i === toIdx;
           stopRows.push(`<div class="stop ${ep ? 'endpoint' : ''}"><div class="t">${tm}</div><div class="marker"></div><div class="sname">${nm}</div></div>`);
         }
