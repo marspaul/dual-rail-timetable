@@ -48,7 +48,7 @@ const TTL_TIMETABLE =  2 * 60 * 60; // 時刻表：2 小時
 
 async function getToken(env) {
   if (_token && Date.now() < _tokenExpiry) return _token;
-  const res = await fetch(TDX_TOKEN_URL, {
+  const res = await retry429(() => fetch(TDX_TOKEN_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
@@ -56,25 +56,35 @@ async function getToken(env) {
       client_id:     env.TDX_CLIENT_ID,
       client_secret: env.TDX_CLIENT_SECRET,
     }),
-  });
-  if (!res.ok) throw new Error(`Token fetch failed: ${res.status}`);
+  }));
+  if (!res.ok) {
+    const err = new Error(`Token fetch failed: ${res.status}`);
+    err.status = res.status === 429 ? 429 : 502;   // 讓前端能辨識限流
+    throw err;
+  }
   const { access_token, expires_in } = await res.json();
   _token       = access_token;
   _tokenExpiry = Date.now() + (expires_in - 60) * 1000;
   return _token;
 }
 
-// TDX 限流（每來源 IP 每秒 50 次）會回 429；Worker 走 Cloudflare 共用 egress IP，
-// 配額跟其他人共享，低流量也可能中。退避重試幾次。
-async function tdxFetch(url, token, tries = 3) {
+// TDX 限流：每來源 IP 每秒 50 次。Worker 走 Cloudflare 共用 egress IP，配額跟
+// 其他人共享，實測低流量也常被擋成一整波，連 OAuth token 端點也會 429。
+const RETRY_BACKOFF_MS = [300, 800, 2000];
+async function retry429(doFetch) {
   let res;
-  for (let i = 0; i < tries; i++) {
-    res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+  for (let i = 0; i <= RETRY_BACKOFF_MS.length; i++) {
+    res = await doFetch();
     if (res.status !== 429) return res;
-    if (i < tries - 1) await new Promise(r => setTimeout(r, 250 * 2 ** i)); // 250ms, 500ms
+    if (i < RETRY_BACKOFF_MS.length) {
+      await new Promise(r => setTimeout(r, RETRY_BACKOFF_MS[i]));
+    }
   }
   return res;
 }
+
+const tdxFetch = (url, token) =>
+  retry429(() => fetch(url, { headers: { Authorization: `Bearer ${token}` } }));
 
 // null origin (file://) 要用 * 才能讓瀏覽器接受
 function corsOrigin(origin) {
@@ -160,7 +170,7 @@ export default {
         _traStationExpiry = Date.now() + STATION_TTL_MS;
         return jsonResp(map, 200, 0, null, null, origin);
       } catch (err) {
-        return jsonResp({ error: err.message }, 500, 0, null, null, origin);
+        return jsonResp({ error: err.message }, err.status || 500, 0, null, null, origin);
       }
     }
 
@@ -188,7 +198,7 @@ export default {
         if (!res.ok) return jsonResp({ error: `${rail.toUpperCase()} stops API ${res.status}` }, res.status, 0, null, null, origin);
         return jsonResp(await res.json(), 200, TTL_FARE, cacheKey, ctx, origin);
       } catch (err) {
-        return jsonResp({ error: err.message }, 500, 0, null, null, origin);
+        return jsonResp({ error: err.message }, err.status || 500, 0, null, null, origin);
       }
     }
 
@@ -208,7 +218,7 @@ export default {
         if (!res.ok) return jsonResp({ error: `ODFare API ${res.status}` }, res.status, 0, null, null, origin);
         return jsonResp(await res.json(), 200, TTL_FARE, cacheKey, ctx, origin);
       } catch (err) {
-        return jsonResp({ error: err.message }, 500, 0, null, null, origin);
+        return jsonResp({ error: err.message }, err.status || 500, 0, null, null, origin);
       }
     }
 
@@ -239,7 +249,7 @@ export default {
       }
       return jsonResp(await res.json(), 200, TTL_TIMETABLE, cacheKey, ctx, origin);
     } catch (err) {
-      return jsonResp({ error: err.message }, 500, 0, null, null, origin);
+      return jsonResp({ error: err.message }, err.status || 500, 0, null, null, origin);
     }
   },
 };
