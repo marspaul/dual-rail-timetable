@@ -699,8 +699,9 @@ function showStationErrorBanner(msg) {
   const el = document.createElement('div');
   el.id = 'station-error-banner';
   el.style.cssText = `margin:0 22px 0;padding:10px 14px;border-radius:12px;background:rgba(248,113,113,0.08);border:1px solid rgba(248,113,113,0.3);font-size:12px;color:#F87171;line-height:1.6;display:flex;align-items:center;justify-content:space-between;gap:10px;`;
-  el.innerHTML = `<span>⚠️ 站牌資料載入失敗<br><small style="opacity:.7;font-family:var(--mono)">${msg}</small></span>
+  el.innerHTML = `<span>⚠️ 站牌資料載入失敗<br><small style="opacity:.7;font-family:var(--mono)"></small></span>
     <button id="retry-stations-btn" style="flex-shrink:0;padding:6px 12px;border:1px solid rgba(248,113,113,0.4);border-radius:8px;background:transparent;color:#F87171;font-size:12px;cursor:pointer;">重試</button>`;
+  el.querySelector('small').textContent = msg;
   const searchCard = document.querySelector('.search-card');
   searchCard.insertAdjacentElement('afterend', el);
   document.getElementById('retry-stations-btn').addEventListener('click', () => {
@@ -1252,7 +1253,8 @@ async function fetchFromTDX(dateVal, timeVal) {
 
   } catch (err) {
     console.error(err);
-    list.innerHTML = `<div class="empty"><div class="icon">⚠️</div>API 呼叫失敗<br><small style="font-family:var(--mono);font-size:11px;opacity:.6">${err.message}</small></div>`;
+    list.innerHTML = '<div class="empty"><div class="icon">⚠️</div>API 呼叫失敗<br><small style="font-family:var(--mono);font-size:11px;opacity:.6"></small></div>';
+    list.querySelector('small').textContent = err.message;
   }
 }
 
@@ -1511,8 +1513,10 @@ async function showDetail(idx, cardEl) {
         _stopsCache[cacheKey] = json.TrainTimetables?.[0]?.StopTimes || [];
       }
       const allStops = _stopsCache[cacheKey];
-      const fromIdx = allStops.findIndex(s => s.StationName?.Zh_tw?.replace(/臺/g, '台') === t.from);
-      const toIdx   = allStops.findIndex(s => s.StationName?.Zh_tw?.replace(/臺/g, '台') === t.to);
+      // 兩邊都正規化（t.from/t.to 來自選單，可能是「臺北」）
+      const fromZ = normName(t.from), toZ = normName(t.to);
+      const fromIdx = allStops.findIndex(s => normName(s.StationName?.Zh_tw || '') === fromZ);
+      const toIdx   = allStops.findIndex(s => normName(s.StationName?.Zh_tw || '') === toZ);
       if (fromIdx >= 0 && toIdx >= 0) {
         const step = fromIdx < toIdx ? 1 : -1;
         const stopRows = [];
