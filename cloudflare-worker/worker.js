@@ -14,6 +14,8 @@
  *   GET /thsr-fare/:from/:to       → THSR 票價
  *   GET /tra/:fromId/:toId/:date   → TRA DailyTrainTimetable OD
  *   GET /thsr/:fromId/:toId/:date  → THSR DailyTimetable OD
+ *   GET /tra-stops/:trainNo/:date  → TRA 單一班次完整停靠站
+ *   GET /thsr-stops/:trainNo/:date → THSR 單一班次完整停靠站
  */
 
 const TDX_TOKEN_URL = 'https://tdx.transportdata.tw/auth/realms/TDXConnect/protocol/openid-connect/token';
@@ -60,6 +62,18 @@ async function getToken(env) {
   _token       = access_token;
   _tokenExpiry = Date.now() + (expires_in - 60) * 1000;
   return _token;
+}
+
+// TDX 限流（每來源 IP 每秒 50 次）會回 429；Worker 走 Cloudflare 共用 egress IP，
+// 配額跟其他人共享，低流量也可能中。退避重試幾次。
+async function tdxFetch(url, token, tries = 3) {
+  let res;
+  for (let i = 0; i < tries; i++) {
+    res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+    if (res.status !== 429) return res;
+    if (i < tries - 1) await new Promise(r => setTimeout(r, 250 * 2 ** i)); // 250ms, 500ms
+  }
+  return res;
 }
 
 // null origin (file://) 要用 * 才能讓瀏覽器接受
@@ -133,9 +147,7 @@ export default {
           return jsonResp(_traStationMap, 200, 0, null, null, origin);
         }
         const token = await getToken(env);
-        const res   = await fetch(`${TDX_BASE}/TRA/Station?$format=JSON`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
+        const res   = await tdxFetch(`${TDX_BASE}/TRA/Station?$format=JSON`, token);
         if (!res.ok) return jsonResp({ error: `TDX TRA Station API ${res.status}` }, res.status, 0, null, null, origin);
         const raw  = await res.json();
         const list = Array.isArray(raw) ? raw : (raw.Stations || []);
@@ -152,18 +164,28 @@ export default {
       }
     }
 
-    // ── 台鐵完整停靠站：/tra-stops/:trainNo/:date（CF Cache 24h） ──
-    const stopsM = pathname.match(/^\/tra-stops\/([^/]+)\/([^/]+)$/);
+    // ── 單一班次完整停靠站：/tra-stops|/thsr-stops/:trainNo/:date（CF Cache 24h） ──
+    const stopsM = pathname.match(/^\/(tra|thsr)-stops\/([^/]+)\/([^/]+)$/);
     if (stopsM) {
+      const [, rail, trainNo, date] = stopsM;
+      // trainNo 會拼進 OData $filter，限制字元避免注入
+      if (!/^[A-Za-z0-9]{1,8}$/.test(trainNo)) {
+        return jsonResp({ error: 'Invalid train number' }, 400, 0, null, null, origin);
+      }
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+        return jsonResp({ error: 'Date must be YYYY-MM-DD' }, 400, 0, null, null, origin);
+      }
+
       const cached = await getCache();
       if (cached) return cached;
 
-      const [, trainNo, date] = stopsM;
       try {
         const token  = await getToken(env);
-        const apiUrl = `${TDX_BASE}/TRA/DailyTrainTimetable/TrainDate/${date}?$filter=TrainInfo/TrainNo eq '${trainNo}'&$format=JSON`;
-        const res = await fetch(apiUrl, { headers: { Authorization: `Bearer ${token}` } });
-        if (!res.ok) return jsonResp({ error: `TRA stops API ${res.status}` }, res.status, 0, null, null, origin);
+        const apiUrl = rail === 'tra'
+          ? `${TDX_BASE}/TRA/DailyTrainTimetable/TrainDate/${date}?$filter=TrainInfo/TrainNo eq '${trainNo}'&$format=JSON`
+          : `https://tdx.transportdata.tw/api/basic/v2/Rail/THSR/DailyTimetable/TrainDate/${date}?$filter=DailyTrainInfo/TrainNo eq '${trainNo}'&$format=JSON`;
+        const res = await tdxFetch(apiUrl, token);
+        if (!res.ok) return jsonResp({ error: `${rail.toUpperCase()} stops API ${res.status}` }, res.status, 0, null, null, origin);
         return jsonResp(await res.json(), 200, TTL_FARE, cacheKey, ctx, origin);
       } catch (err) {
         return jsonResp({ error: err.message }, 500, 0, null, null, origin);
@@ -182,7 +204,7 @@ export default {
         const apiUrl = rail === 'tra'
           ? `${TDX_BASE}/TRA/ODFare/${fromId}/to/${toId}?$format=JSON`
           : `https://tdx.transportdata.tw/api/basic/v2/Rail/THSR/ODFare/${fromId}/to/${toId}?$format=JSON`;
-        const res = await fetch(apiUrl, { headers: { Authorization: `Bearer ${token}` } });
+        const res = await tdxFetch(apiUrl, token);
         if (!res.ok) return jsonResp({ error: `ODFare API ${res.status}` }, res.status, 0, null, null, origin);
         return jsonResp(await res.json(), 200, TTL_FARE, cacheKey, ctx, origin);
       } catch (err) {
@@ -210,7 +232,7 @@ export default {
         ? `${TDX_BASE}/TRA/DailyTrainTimetable/OD/${fromId}/to/${toId}/${date}?$format=JSON`
         : `https://tdx.transportdata.tw/api/basic/v2/Rail/THSR/DailyTimetable/OD/${fromId}/to/${toId}/${date}?$format=JSON`;
 
-      const res = await fetch(apiUrl, { headers: { Authorization: `Bearer ${token}` } });
+      const res = await tdxFetch(apiUrl, token);
       if (!res.ok) {
         const text = await res.text();
         return jsonResp({ error: `TDX API error ${res.status}`, detail: text }, res.status, 0, null, null, origin);

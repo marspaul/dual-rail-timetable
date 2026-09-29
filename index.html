@@ -1253,7 +1253,8 @@ async function fetchFromTDX(dateVal, timeVal) {
 
   } catch (err) {
     console.error(err);
-    list.innerHTML = '<div class="empty"><div class="icon">⚠️</div>API 呼叫失敗<br><small style="font-family:var(--mono);font-size:11px;opacity:.6"></small></div>';
+    const rateLimited = /\b429\b/.test(err.message);
+    list.innerHTML = `<div class="empty"><div class="icon">⚠️</div>${rateLimited ? 'TDX 流量限制，請稍後再試' : 'API 呼叫失敗'}<br><small style="font-family:var(--mono);font-size:11px;opacity:.6"></small></div>`;
     list.querySelector('small').textContent = err.message;
   }
 }
@@ -1302,16 +1303,6 @@ async function fetchTra(dateVal, timeVal) {
     const typeName = info.TrainTypeName?.Zh_tw || info.TrainTypeName || '';
     const fareKey  = `${info.Direction}_${info.TrainTypeCode}`;
 
-    // 擷取實際經停站（含真實時刻）
-    const step = fromIdx < toIdx ? 1 : -1;
-    const stopTimes = [];
-    for (let i = fromIdx; i !== toIdx + step; i += step) {
-      const s = stops[i];
-      const nm = (s.StationName?.Zh_tw || s.StationName || '').replace(/臺/g, '台');
-      const t  = s.DepartureTime || s.ArrivalTime || '';
-      stopTimes.push({ name: nm, time: t });
-    }
-
     return {
       no:   info.TrainNo,
       type: typeName,
@@ -1323,7 +1314,6 @@ async function fetchTra(dateVal, timeVal) {
       from: S.from.zh, to: S.to.zh,
       late: false, lateMin: 0,
       reserved: RESERVED_TYPES.some(t => typeName.includes(t)),
-      stopTimes,
     };
   }).filter(t => t && t.depMin >= filterMin)
     .sort((a, b) => a.depMin - b.depMin);
@@ -1500,58 +1490,52 @@ async function showDetail(idx, cardEl) {
   cardEl.insertAdjacentElement('afterend', detail);
   setTimeout(() => detail.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 50);
 
-  // TRA：呼叫完整班次 API 取得實際停靠站
-  if (t.sys === 'tra') {
-    try {
-      const date = $('#date-input').value;
-      const cacheKey = `${t.no}:${date}`;
-      if (!_stopsCache[cacheKey]) {
-        const res  = await secureFetch(`${TDX_CONFIG.PROXY_URL}/tra-stops/${t.no}/${date}`);
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const json = await res.json();
-        if (json.error) throw new Error(json.error);
-        _stopsCache[cacheKey] = json.TrainTimetables?.[0]?.StopTimes || [];
-      }
-      const allStops = _stopsCache[cacheKey];
-      // 兩邊都正規化（t.from/t.to 來自選單，可能是「臺北」）
-      const fromZ = normName(t.from), toZ = normName(t.to);
-      const fromIdx = allStops.findIndex(s => normName(s.StationName?.Zh_tw || '') === fromZ);
-      const toIdx   = allStops.findIndex(s => normName(s.StationName?.Zh_tw || '') === toZ);
-      if (fromIdx >= 0 && toIdx >= 0) {
-        const step = fromIdx < toIdx ? 1 : -1;
-        const stopRows = [];
-        for (let i = fromIdx; i !== toIdx + step; i += step) {
-          const s  = allStops[i];
-          const nm = normName(s.StationName?.Zh_tw || '');
-          // 終點站顯示抵達時間，其餘顯示發車時間
-          const tm = (i === toIdx ? (s.ArrivalTime || s.DepartureTime) : (s.DepartureTime || s.ArrivalTime)) || '';
-          const ep = i === fromIdx || i === toIdx;
-          stopRows.push(`<div class="stop ${ep ? 'endpoint' : ''}"><div class="t">${tm}</div><div class="marker"></div><div class="sname">${nm}</div></div>`);
-        }
-        const stopsEl = detail.querySelector(`#detail-stops-${idx}`);
-        if (stopsEl) stopsEl.innerHTML = stopRows.join('');
-        return;
-      }
-    } catch (e) { /* fallback to hardcoded list */ }
+  // 停靠站：台鐵、高鐵都向 API 取實際停靠站（不再用硬編碼列表估算）
+  const stopsEl = detail.querySelector(`#detail-stops-${idx}`);
+  try {
+    const rows = await buildStopRows(t, $('#date-input').value);
+    if (stopsEl) stopsEl.innerHTML = rows;
+  } catch (e) {
+    console.warn('[stops]', e);
+    if (stopsEl) {
+      stopsEl.innerHTML = `<div style="color:var(--c-text-dim);font-size:13px;padding:10px 0;line-height:1.7">⚠️ 無法取得停靠站資訊<br><small style="opacity:.65;font-family:var(--mono);font-size:11px"></small></div>`;
+      stopsEl.querySelector('small').textContent = e.message;
+    }
+  }
+}
+
+// 向 Worker 取單一班次的完整停靠站，截出起訖之間的區段
+async function buildStopRows(t, date) {
+  const key = `${t.sys}:${t.no}:${date}`;   // 台鐵與高鐵車次號會撞，要分開
+  if (!_stopsCache[key]) {
+    const res = await secureFetch(`${TDX_CONFIG.PROXY_URL}/${t.sys}-stops/${t.no}/${date}`);
+    if (!res.ok) throw new Error(res.status === 429 ? 'TDX 流量限制，請稍後再試' : `HTTP ${res.status}`);
+    const json = await res.json();
+    if (json.error) throw new Error(json.error);
+    const list  = Array.isArray(json) ? json : (json.TrainTimetables || json.DailyTimetables || []);
+    const stops = list[0]?.StopTimes || [];
+    if (!stops.length) throw new Error('查無此班次的停靠站資料');
+    _stopsCache[key] = stops;               // 空結果不寫快取，下次還能重試
   }
 
-  // THSR 或 TRA fallback：用硬編碼列表插值（估算時間）
-  const allZ = t.sys === 'thsr'
-    ? THSR.map(s => s.zh)
-    : TRA.flatMap(g => g.stations.map(s => s.zh));
-  const fi = allZ.indexOf(t.from), ti = allZ.indexOf(t.to);
-  const step = fi < ti ? 1 : -1;
-  const stops = [];
-  for (let i = fi; i !== ti + step; i += step) stops.push(allZ[i]);
-  const perStop = t.dur / Math.max(stops.length - 1, 1);
-  const base = new Date(`${$('#date-input').value}T${t.dep}`);
-  const fallbackRows = stops.map((nm, i) => {
-    const time = new Date(base.getTime() + i * perStop * 60000);
-    const ep = i === 0 || i === stops.length - 1;
-    return `<div class="stop ${ep ? 'endpoint' : ''}"><div class="t">${fmt(time)}</div><div class="marker"></div><div class="sname">${nm}</div></div>`;
-  }).join('');
-  const stopsEl = detail.querySelector(`#detail-stops-${idx}`);
-  if (stopsEl) stopsEl.innerHTML = fallbackRows;
+  const all   = _stopsCache[key];
+  // 兩邊都正規化（t.from/t.to 來自選單，可能是「臺北」）
+  const fromZ = normName(t.from), toZ = normName(t.to);
+  const fromIdx = all.findIndex(s => normName(s.StationName?.Zh_tw || '') === fromZ);
+  const toIdx   = all.findIndex(s => normName(s.StationName?.Zh_tw || '') === toZ);
+  if (fromIdx < 0 || toIdx < 0) throw new Error(`停靠站清單中找不到「${fromIdx < 0 ? t.from : t.to}」`);
+
+  const step = fromIdx < toIdx ? 1 : -1;
+  const rows = [];
+  for (let i = fromIdx; i !== toIdx + step; i += step) {
+    const s  = all[i];
+    const nm = normName(s.StationName?.Zh_tw || '');
+    // 終點站顯示抵達時間，其餘顯示發車時間
+    const tm = (i === toIdx ? (s.ArrivalTime || s.DepartureTime) : (s.DepartureTime || s.ArrivalTime)) || '';
+    const ep = i === fromIdx || i === toIdx;
+    rows.push(`<div class="stop ${ep ? 'endpoint' : ''}"><div class="t">${tm}</div><div class="marker"></div><div class="sname">${nm}</div></div>`);
+  }
+  return rows.join('');
 }
 
 /* ─── Train Type pills（首頁） ─── */
