@@ -200,6 +200,36 @@ export default {
       }
     }
 
+    // ── 【臨時】探測 TDX 整日端點的分頁行為：/_probe/:rail/:date?top=&skip= ──
+    // 只量回應大小、不解析 body，避免吃掉免費方案的 10ms CPU。量完即移除。
+    const probeM = pathname.match(/^\/_probe\/(tra|thsr)\/(\d{4}-\d{2}-\d{2})$/);
+    if (probeM) {
+      const [, rail, date] = probeM;
+      const top  = url.searchParams.get('top');
+      const skip = url.searchParams.get('skip');
+      if ((top && !/^\d{1,7}$/.test(top)) || (skip && !/^\d{1,7}$/.test(skip))) {
+        return jsonResp({ error: 'top/skip must be digits' }, 400, 0, null, null, origin);
+      }
+      const base = rail === 'tra'
+        ? `${TDX_BASE}/TRA/DailyTrainTimetable/TrainDate/${date}`
+        : `https://tdx.transportdata.tw/api/basic/v2/Rail/THSR/DailyTimetable/TrainDate/${date}`;
+      const qs = ['$format=JSON'];
+      if (top)  qs.push(`$top=${top}`);
+      if (skip) qs.push(`$skip=${skip}`);
+      try {
+        const token = await getToken(env);
+        const res   = await tdxFetch(`${base}?${qs.join('&')}`, token);
+        const buf   = await res.arrayBuffer();          // 不 parse，只量大小
+        return jsonResp({
+          rail, date, top: top || null, skip: skip || null,
+          status: res.status,
+          bytes:  buf.byteLength,
+        }, 200, 0, null, null, origin);
+      } catch (err) {
+        return jsonResp({ error: err.message }, err.status || 500, 0, null, null, origin);
+      }
+    }
+
     // ── 單一班次完整停靠站：/tra-stops|/thsr-stops/:trainNo/:date（CF Cache 24h） ──
     const stopsM = pathname.match(/^\/(tra|thsr)-stops\/([^/]+)\/([^/]+)$/);
     if (stopsM) {
