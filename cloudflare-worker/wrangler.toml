@@ -2,6 +2,12 @@ name            = "tdx-proxy"
 main            = "worker.js"
 compatibility_date = "2024-11-01"
 
+# TDX access token 跨 isolate 共用（module-level 變數每次冷啟動都是空的，
+# 會一直重抓 token，撞上 TDX 對 token 端點的限流）
+[[kv_namespaces]]
+binding = "TOKEN_KV"
+id      = "355c6333f77644fb9b357552f6691d76"
+
 # 設定 Secrets（不寫在這裡，用指令設定）：
 #   wrangler secret put TDX_CLIENT_ID
 #   wrangler secret put TDX_CLIENT_SECRET

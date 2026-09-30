@@ -33,7 +33,8 @@ const CORS_BASE = {
   'Access-Control-Allow-Headers': 'Content-Type, X-App-Id',
 };
 
-// Module-level token cache
+// Token 快取：module-level（同一個 isolate 內）+ KV（跨 isolate 共用）
+const TOKEN_KV_KEY = 'tdx_access_token';
 let _token = null;
 let _tokenExpiry = 0;
 
@@ -48,6 +49,21 @@ const TTL_TIMETABLE =  2 * 60 * 60; // 時刻表：2 小時
 
 async function getToken(env) {
   if (_token && Date.now() < _tokenExpiry) return _token;
+
+  // Workers 每次冷啟動 module-level 變數都是空的，低流量時 isolate 常被回收，
+  // 結果每隔一陣子就重抓一次 token，而 TDX 的 token 端點同樣會回 429。
+  // 放進 KV 讓所有 isolate 共用同一顆 token。
+  if (env.TOKEN_KV) {
+    try {
+      const hit = await env.TOKEN_KV.get(TOKEN_KV_KEY, { type: 'json' });
+      if (hit?.token && Date.now() < hit.expiry) {
+        _token       = hit.token;
+        _tokenExpiry = hit.expiry;
+        return _token;
+      }
+    } catch { /* KV 讀取失敗就照常重抓 */ }
+  }
+
   const res = await retry429(() => fetch(TDX_TOKEN_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -65,6 +81,16 @@ async function getToken(env) {
   const { access_token, expires_in } = await res.json();
   _token       = access_token;
   _tokenExpiry = Date.now() + (expires_in - 60) * 1000;
+
+  if (env.TOKEN_KV) {
+    try {
+      await env.TOKEN_KV.put(
+        TOKEN_KV_KEY,
+        JSON.stringify({ token: _token, expiry: _tokenExpiry }),
+        { expirationTtl: Math.max(expires_in - 60, 60) },  // KV 下限 60 秒
+      );
+    } catch { /* 寫入失敗不影響這次請求 */ }
+  }
   return _token;
 }
 
