@@ -63,12 +63,27 @@ TDX 原始 JSON 每個停靠站都塞了四種語言的站名，而 Worker 已�
 "1000,0728,0731"
 ```
 
-換算下來：
+編碼器已實作並驗證 → [`cloudflare-worker/timetable-codec.js`](../cloudflare-worker/timetable-codec.js)
 
-| | 原始 | 精簡後 |
+實測壓縮比（27 個真實班次，697 個停靠站；`timetable-codec.test.mjs`）：
+
+| | 台鐵 | 高鐵 |
 |---|---|---|
-| 台鐵全日 | 3.72 MB | **約 330 KB** |
-| 高鐵全日 | 268 KB | **約 22 KB** |
+| 原始 | 170 bytes/停靠站 | 203 bytes/停靠站 |
+| 精簡 | **12 bytes/停靠站** | **13 bytes/停靠站** |
+| 壓縮比 | **13.8x** | **15.5x** |
+| 精簡 + gzip | 33.5x | 36.3x |
+
+換算到整日：
+
+| | 原始 | 精簡後 | 精簡 + gzip |
+|---|---|---|---|
+| 台鐵全日 | 3.72 MB | **約 263 KB** | 約 109 KB |
+| 高鐵全日 | 268 KB | **約 17 KB** | 約 7 KB |
+
+> 交叉驗算：用「壓縮比」與「停靠站數 × 12 bytes」兩種算法分別得到 263 KB 與 257 KB，相差 2%，互相吻合。
+
+**gzip 可以不用。** 分桶後單桶只有十幾 KB，再壓縮省下的量不值得多一層 `DecompressionStream` 的複雜度與 CPU。
 
 ---
 
@@ -90,8 +105,9 @@ tn:thsr:2026-10-01:0
 | 指標 | 值 |
 |------|-----|
 | 寫入量 | 16 桶 × 2 鐵路 = **32 writes/day** |
-| 單桶大小 | 台鐵約 21 KB、高鐵約 1.4 KB |
-| 查詢成本 | 讀 1 桶 + parse 約 21 KB — CPU 壓得住 |
+| 單桶大小 | 台鐵約 **16.5 KB**、高鐵約 **1.1 KB**（實測換算）|
+| 查詢成本 | 讀 1 桶 + 掃描約 16.5 KB 純文字 — CPU 壓得住 |
+| 儲存量 | 預抓 8 天 × 2 鐵路 ≈ 2.2 MB，相對 KV 免費額度 1 GB 微不足道 |
 
 ### 預抓幾天
 
@@ -142,10 +158,10 @@ export default {
 |---|---|---|
 | 費用 | $5/月 | 免費 |
 | 重活在哪 | Worker | GitHub Runner |
-| Worker 每次請求 | 讀 1 個約 21 KB 的桶 | 同左 |
+| Worker 每次請求 | 讀 1 個約 16.5 KB 的桶 | 同左 |
 | 排程邏輯維護 | 混在 Worker 裡 | 獨立在 repo 裡 |
 
-方案 B 把重活移出 Cloudflare，Worker 的請求路徑只剩「讀一個約 21 KB 的桶」，穩穩在免費方案的 10 ms CPU 內。
+方案 B 把重活移出 Cloudflare，Worker 的請求路徑只剩「讀一個約 16.5 KB 的桶」，穩穩在免費方案的 10 ms CPU 內。
 
 即使全日只有 3.72 MB，`JSON.parse()` 一份 3.72 MB 的 JSON 仍遠超過 10 ms，所以**排程端無論如何都不能跑在免費方案的 Cron Trigger 上**。
 
@@ -215,10 +231,26 @@ get()  ──► 邊緣節點 [ miss ] ──► 區域層 ──► 中央儲�
 
 > 回應空值的形狀兩邊不同：台鐵是包在物件裡（空 = 178 bytes），高鐵直接回陣列（空 = `[]` = 2 bytes）。
 
+### ✅ 精簡編碼：實作並驗證（2026-09-30）
+
+編碼器與測試已進 repo：
+
+- [`cloudflare-worker/timetable-codec.js`](../cloudflare-worker/timetable-codec.js) — `encodeDay()` / `encodeDayBuckets()` / `decodeTrain()` / `bucketOf()`
+- [`cloudflare-worker/timetable-codec.test.mjs`](../cloudflare-worker/timetable-codec.test.mjs) — 往返驗證 + 壓縮比量測
+
+```bash
+node timetable-codec.test.mjs <樣本目錄>
+```
+
+樣本目錄放 `/tra-stops/:no/:date`、`/thsr-stops/:no/:date` 的原始回應。
+
+**往返驗證：27 個真實班次、697 個停靠站，還原後的 StationID 與到發時刻與原始資料全數一致。** 壓縮比 13.8x（台鐵）／15.5x（高鐵），優於原本 12x 的估算。
+
 ### ⬜ 仍未驗證
 
-- [ ] 精簡編碼後的實際大小（本文的 330 KB / 22 KB 是依「每停靠站 170 → 14 bytes」換算，未實作驗證）。
 - [ ] 各鐵路每日班次數是否隨日期大幅變動（只量了 2026-10-01 單日）。
+- [ ] 高鐵的壓縮比只取樣 7 個班次（台鐵 20 個），樣本偏小。
+- [ ] 編碼器目前只保留 `StopTimes` 所需的欄位（站牌 ID、到站、發車）加上車種碼與方向。若日後要讓 OD 搜尋也改讀 KV，需要再確認還缺哪些欄位。
 
 ---
 
