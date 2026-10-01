@@ -15,7 +15,7 @@
  */
 
 import { writeFileSync } from 'node:fs';
-import { encodeDayBuckets } from '../cloudflare-worker/timetable-codec.js';
+import { encodeDayBuckets, collectStationNames } from '../cloudflare-worker/timetable-codec.js';
 
 const TOKEN_URL = 'https://tdx.transportdata.tw/auth/realms/TDXConnect/protocol/openid-connect/token';
 const DAY_URL = {
@@ -87,6 +87,7 @@ async function main() {
   console.log(`預抓 ${DAYS} 天：${dates[0]} ~ ${dates.at(-1)}（台北時間）\n`);
 
   const entries = [];
+  const names   = { tra: {}, thsr: {} };   // StationID → 站名，取各日聯集
   let okDays = 0, failDays = 0;
 
   for (const date of dates) {
@@ -102,6 +103,7 @@ async function main() {
         const raw     = await res.json();
         const rawSize = JSON.stringify(raw).length;
         const buckets = encodeDayBuckets(raw);
+        Object.assign(names[rail], collectStationNames(raw));
         const keys    = Object.keys(buckets);
 
         if (!keys.length) {
@@ -129,6 +131,14 @@ async function main() {
   if (!entries.length) {
     console.error('\n沒有任何資料可寫入');
     process.exit(1);
+  }
+
+  // 站名表：以時刻表為準，涵蓋 Station API 還沒收錄的新站
+  for (const [rail, table] of Object.entries(names)) {
+    const n = Object.keys(table).length;
+    if (!n) continue;
+    entries.push({ key: `names:${rail}`, value: JSON.stringify(table), expiration_ttl: 30 * 86400 });
+    console.log(`  站名表 ${rail}：${n} 站`);
   }
 
   writeFileSync(OUT, JSON.stringify(entries));

@@ -53,8 +53,10 @@ let _traStationMap    = null;
 let _traStationExpiry = 0;
 const STATION_TTL_MS  = 6 * 60 * 60 * 1000;
 
-// StationID → 站名（解碼 KV 時刻表時用），由上面的對照表反轉而來
+// StationID → 站名（解碼 KV 時刻表時用）
+const NAMES_KV_KEY = rail => `names:${rail}`;
 let _idToName = { tra: null, thsr: null };
+let _idToNameExpiry = { tra: 0, thsr: 0 };
 const invert = map => Object.fromEntries(Object.entries(map).map(([n, i]) => [i, n]));
 
 // Cloudflare Cache TTL（秒）
@@ -176,10 +178,22 @@ async function getTraStationMap(env) {
   return map;
 }
 
-/** StationID → 站名 的查詢函式，給 decodeTrain() 用 */
+/**
+ * StationID → 站名 的查詢函式，給 decodeTrain() 用。
+ *
+ * 以排程寫入的 names:{rail} 為優先，站牌表只當後備：TDX 的 Station API 只列
+ * 現役車站，會落後時刻表（實測站牌 1105 從 2026-10-05 起出現在時刻表，但
+ * Station API 當時仍查不到，導致解碼出來的站名是空的）。
+ */
 async function idToName(env, rail) {
-  if (!_idToName[rail]) {
-    _idToName[rail] = invert(rail === 'thsr' ? THSR_STATIONS : await getTraStationMap(env));
+  if (!_idToName[rail] || Date.now() >= _idToNameExpiry[rail]) {
+    const base = invert(rail === 'thsr' ? THSR_STATIONS : await getTraStationMap(env));
+    let prefetched = null;
+    try {
+      prefetched = await env.TOKEN_KV?.get(NAMES_KV_KEY(rail), { type: 'json' });
+    } catch { /* 沒有就只用站牌表 */ }
+    _idToName[rail]       = { ...base, ...prefetched };
+    _idToNameExpiry[rail] = Date.now() + STATION_TTL_MS;
   }
   const table = _idToName[rail];
   return id => table[id] || '';
@@ -199,6 +213,10 @@ async function stopsFromKv(env, rail, trainNo, date) {
 
     const train = decodeTrain(bucket, trainNo, await idToName(env, rail));
     if (!train?.StopTimes?.length) return null;
+
+    // 任何一站還原不出站名就不要用這份資料 —— 寧可多花一次 TDX 往返，
+    // 也不要在畫面上顯示空白站名。
+    if (train.StopTimes.some(s => !s.StationName.Zh_tw)) return null;
 
     const info = { TrainNo: train.TrainNo, Direction: train.Direction };
     return rail === 'tra'
