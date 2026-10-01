@@ -644,6 +644,12 @@ const UNRESERVED_TYPES = ['區間','區間快'];
 // 站名統一：臺→台，方便與 TDX 回傳名稱對齊
 const normName = s => s.replace(/臺/g, '台');
 
+// TDX 還沒給名字的車站，暫時補上。
+// 只在 TDX 真的沒提供站名時才用得到，等 TDX 補齊就會自動被真實站名蓋過。
+// 1105：平鎮臨時站，2026-10-03 啟用，位於埔心與中壢之間
+//       （https://udn.com/news/story/7324/9784491）
+const STATION_NAME_PATCH = { '1105': '平鎮' };
+
 // 站牌 ID 快取：localStorage 存 7 天，避免頻繁打 API
 const STATIONS_CACHE_KEY = 'dual_rail_stations_v1';
 const STATIONS_TTL_MS    = 7 * 24 * 60 * 60 * 1000; // 7 天
@@ -1529,9 +1535,11 @@ async function buildStopRows(t, date) {
   const rows = [];
   for (let i = fromIdx; i !== toIdx + step; i += step) {
     const s  = all[i];
-    // TDX 對尚未啟用的新站只給 StationID、沒有 StationName（實測 1105 自
-    // 2026-10-03 起出現在時刻表但無站名），退而顯示站號，不要留白
-    const nm = normName(s.StationName?.Zh_tw || '') || `#${s.StationID || '?'}`;
+    // TDX 對新站可能只給 StationID、沒有 StationName（實測平鎮臨時站 1105 自
+    // 2026-10-03 起出現在時刻表但無站名）。順序：TDX 原始站名 → 本地補丁 → 站號
+    const nm = normName(s.StationName?.Zh_tw || '')
+             || STATION_NAME_PATCH[s.StationID]
+             || `#${s.StationID || '?'}`;
     // 終點站顯示抵達時間，其餘顯示發車時間
     const tm = (i === toIdx ? (s.ArrivalTime || s.DepartureTime) : (s.DepartureTime || s.ArrivalTime)) || '';
     const ep = i === fromIdx || i === toIdx;
