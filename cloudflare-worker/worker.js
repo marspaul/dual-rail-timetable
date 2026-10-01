@@ -18,6 +18,8 @@
  *   GET /thsr-stops/:trainNo/:date → THSR 單一班次完整停靠站
  */
 
+import { decodeTrain, bucketOf } from './timetable-codec.js';
+
 const TDX_TOKEN_URL = 'https://tdx.transportdata.tw/auth/realms/TDXConnect/protocol/openid-connect/token';
 const TDX_BASE      = 'https://tdx.transportdata.tw/api/basic/v3/Rail';
 
@@ -38,10 +40,22 @@ const TOKEN_KV_KEY = 'tdx_access_token';
 let _token = null;
 let _tokenExpiry = 0;
 
-// TRA 站牌 module-level 快取（6 小時）
+// 高鐵站牌（固定 12 站）
+const THSR_STATIONS = {
+  '南港':'0990','台北':'1000','板橋':'1010','桃園':'1020',
+  '新竹':'1030','苗栗':'1035','台中':'1040','彰化':'1043',
+  '雲林':'1047','嘉義':'1050','台南':'1060','左營':'1070',
+};
+
+// TRA 站牌快取：module-level（6 小時）+ KV（跨 isolate，避免冷啟動又去打 TDX）
+const STATIONS_KV_KEY = 'tra_station_map';
 let _traStationMap    = null;
 let _traStationExpiry = 0;
 const STATION_TTL_MS  = 6 * 60 * 60 * 1000;
+
+// StationID → 站名（解碼 KV 時刻表時用），由上面的對照表反轉而來
+let _idToName = { tra: null, thsr: null };
+const invert = map => Object.fromEntries(Object.entries(map).map(([n, i]) => [i, n]));
 
 // Cloudflare Cache TTL（秒）
 const TTL_FARE      = 24 * 60 * 60; // 票價：24 小時
@@ -117,6 +131,84 @@ function corsOrigin(origin) {
   return (!origin || origin === 'null') ? '*' : origin;
 }
 
+/**
+ * 台鐵站牌對照表（站名 → ID）。
+ * 三層：module 變數 → KV → TDX。放進 KV 是為了讓冷啟動的 isolate 不必再打
+ * 一次 TDX（那樣就失去預抓的意義，而且 Station API 一樣會被限流）。
+ */
+async function getTraStationMap(env) {
+  if (_traStationMap && Date.now() < _traStationExpiry) return _traStationMap;
+
+  if (env.TOKEN_KV) {
+    try {
+      const hit = await env.TOKEN_KV.get(STATIONS_KV_KEY, { type: 'json' });
+      if (hit && Object.keys(hit).length) {
+        _traStationMap    = hit;
+        _traStationExpiry = Date.now() + STATION_TTL_MS;
+        return hit;
+      }
+    } catch { /* KV 讀失敗就往下走 TDX */ }
+  }
+
+  const token = await getToken(env);
+  const res   = await tdxFetch(`${TDX_BASE}/TRA/Station?$format=JSON`, token);
+  if (!res.ok) {
+    const err = new Error(`TDX TRA Station API ${res.status}`);
+    err.status = res.status;
+    throw err;
+  }
+  const raw  = await res.json();
+  const list = Array.isArray(raw) ? raw : (raw.Stations || []);
+  const map  = {};
+  for (const st of list) {
+    const name = (st.StationName?.Zh_tw || '').replace(/臺/g, '台');
+    if (name && st.StationID) map[name] = st.StationID;
+  }
+  _traStationMap    = map;
+  _traStationExpiry = Date.now() + STATION_TTL_MS;
+
+  if (env.TOKEN_KV) {
+    try {
+      await env.TOKEN_KV.put(STATIONS_KV_KEY, JSON.stringify(map),
+        { expirationTtl: 7 * 24 * 60 * 60 });
+    } catch { /* 寫入失敗不影響這次請求 */ }
+  }
+  return map;
+}
+
+/** StationID → 站名 的查詢函式，給 decodeTrain() 用 */
+async function idToName(env, rail) {
+  if (!_idToName[rail]) {
+    _idToName[rail] = invert(rail === 'thsr' ? THSR_STATIONS : await getTraStationMap(env));
+  }
+  const table = _idToName[rail];
+  return id => table[id] || '';
+}
+
+/**
+ * 從預抓進 KV 的整日時刻表取單一班次，還原成與 TDX 相同的回應形狀。
+ * 沒有預抓資料（或任何一步失敗）就回 null，交給呼叫端走即時查詢。
+ */
+async function stopsFromKv(env, rail, trainNo, date) {
+  if (!env.TOKEN_KV) return null;
+  try {
+    // 不設 cacheTtl：KV 預設 60 秒，連「查不到」也會被快取，設長了排程剛寫完
+    // 的資料會有更長的空窗。重複請求本來就被外層的 Cloudflare Cache 擋掉了。
+    const bucket = await env.TOKEN_KV.get(`tn:${rail}:${date}:${bucketOf(trainNo)}`);
+    if (!bucket) return null;
+
+    const train = decodeTrain(bucket, trainNo, await idToName(env, rail));
+    if (!train?.StopTimes?.length) return null;
+
+    const info = { TrainNo: train.TrainNo, Direction: train.Direction };
+    return rail === 'tra'
+      ? { TrainDate: date, TrainTimetables: [{ TrainInfo: { ...info, TrainTypeCode: train.TrainTypeCode }, StopTimes: train.StopTimes }] }
+      : [{ TrainDate: date, DailyTrainInfo: info, StopTimes: train.StopTimes }];
+  } catch {
+    return null;
+  }
+}
+
 function jsonResp(data, status = 200, ttl = 0, cacheKey = null, ctx = null, origin = null) {
   const headers = {
     ...CORS_BASE,
@@ -167,34 +259,15 @@ export default {
       return new Response(cached.body, { status: cached.status, headers });
     }
 
-    // ── 高鐵站牌（hardcoded，直接回傳） ──
+    // ── 高鐵站牌（固定，直接回傳） ──
     if (pathname === '/stations/thsr') {
-      return jsonResp({
-        '南港':'0990','台北':'1000','板橋':'1010','桃園':'1020',
-        '新竹':'1030','苗栗':'1035','台中':'1040','彰化':'1043',
-        '雲林':'1047','嘉義':'1050','台南':'1060','左營':'1070',
-      }, 200, 0, null, null, origin);
+      return jsonResp(THSR_STATIONS, 200, 0, null, null, origin);
     }
 
-    // ── 台鐵站牌（module-level 快取 6h） ──
+    // ── 台鐵站牌（module 快取 6h → KV → TDX） ──
     if (pathname === '/stations/tra') {
       try {
-        if (_traStationMap && Date.now() < _traStationExpiry) {
-          return jsonResp(_traStationMap, 200, 0, null, null, origin);
-        }
-        const token = await getToken(env);
-        const res   = await tdxFetch(`${TDX_BASE}/TRA/Station?$format=JSON`, token);
-        if (!res.ok) return jsonResp({ error: `TDX TRA Station API ${res.status}` }, res.status, 0, null, null, origin);
-        const raw  = await res.json();
-        const list = Array.isArray(raw) ? raw : (raw.Stations || []);
-        const map  = {};
-        for (const s of list) {
-          const name = (s.StationName?.Zh_tw || '').replace(/臺/g, '台');
-          if (name && s.StationID) map[name] = s.StationID;
-        }
-        _traStationMap    = map;
-        _traStationExpiry = Date.now() + STATION_TTL_MS;
-        return jsonResp(map, 200, 0, null, null, origin);
+        return jsonResp(await getTraStationMap(env), 200, 0, null, null, origin);
       } catch (err) {
         return jsonResp({ error: err.message }, err.status || 500, 0, null, null, origin);
       }
@@ -214,6 +287,11 @@ export default {
 
       const cached = await getCache();
       if (cached) return cached;
+
+      // 預抓進 KV 的整日時刻表（若排程已寫入）。拿不到就往下走即時查詢，
+      // 所以排程漏跑、KV 還沒寫入、或臨時加開的班次都不會壞掉。
+      const prefetched = await stopsFromKv(env, rail, trainNo, date);
+      if (prefetched) return jsonResp(prefetched, 200, TTL_FARE, cacheKey, ctx, origin);
 
       try {
         const token  = await getToken(env);
