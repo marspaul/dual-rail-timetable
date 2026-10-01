@@ -214,9 +214,6 @@ async function stopsFromKv(env, rail, trainNo, date) {
     const train = decodeTrain(bucket, trainNo, await idToName(env, rail));
     if (!train?.StopTimes?.length) return null;
 
-    // 任何一站還原不出站名就不要用這份資料 —— 寧可多花一次 TDX 往返，
-    // 也不要在畫面上顯示空白站名。
-    if (train.StopTimes.some(s => !s.StationName.Zh_tw)) return null;
 
     const info = { TrainNo: train.TrainNo, Direction: train.Direction };
     return rail === 'tra'

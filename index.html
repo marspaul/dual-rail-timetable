@@ -1529,7 +1529,9 @@ async function buildStopRows(t, date) {
   const rows = [];
   for (let i = fromIdx; i !== toIdx + step; i += step) {
     const s  = all[i];
-    const nm = normName(s.StationName?.Zh_tw || '');
+    // TDX 對尚未啟用的新站只給 StationID、沒有 StationName（實測 1105 自
+    // 2026-10-05 起出現在時刻表但無站名），退而顯示站號，不要留白
+    const nm = normName(s.StationName?.Zh_tw || '') || `#${s.StationID || '?'}`;
     // 終點站顯示抵達時間，其餘顯示發車時間
     const tm = (i === toIdx ? (s.ArrivalTime || s.DepartureTime) : (s.DepartureTime || s.ArrivalTime)) || '';
     const ep = i === fromIdx || i === toIdx;
