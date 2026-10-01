@@ -182,7 +182,7 @@ async function getTraStationMap(env) {
  * StationID → 站名 的查詢函式，給 decodeTrain() 用。
  *
  * 以排程寫入的 names:{rail} 為優先，站牌表只當後備：TDX 的 Station API 只列
- * 現役車站，會落後時刻表（實測站牌 1105 從 2026-10-05 起出現在時刻表，但
+ * 現役車站，會落後時刻表（實測站牌 1105 從 2026-10-03 起出現在時刻表，但
  * Station API 當時仍查不到，導致解碼出來的站名是空的）。
  */
 async function idToName(env, rail) {

@@ -31,7 +31,7 @@ const toColon = s => (s === MISSING ? '' : `${s.slice(0, 2)}:${s.slice(2, 4)}`);
  * 從整日時刻表抽出 StationID → 站名。
  *
  * 編碼時丟掉站名是為了省空間，解碼時再由對照表還原 —— 但 TDX 的 Station API
- * 只列現役車站，會落後時刻表（實測 1105 從 2026-10-05 起出現在時刻表，
+ * 只列現役車站，會落後時刻表（實測 1105 從 2026-10-03 起出現在時刻表，
  * Station API 當時仍查不到）。所以站名要以時刻表本身為準，不能只靠站牌表。
  */
 export function collectStationNames(raw) {
