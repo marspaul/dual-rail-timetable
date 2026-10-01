@@ -59,8 +59,12 @@ TDX 的限制是每來源 IP 每秒 50 次，但 Worker 走 Cloudflare 共用 eg
 - access token 存在 KV（`TOKEN_KV`）跨 isolate 共用。Workers 冷啟動時 module-level 變數是空的，低流量下 isolate 常被回收，不共用的話會一直重抓 token
 - 重試後仍失敗會回 429，前端顯示「TDX 流量限制，請稍後再試」
 
-重試只是止血，根因（共用 egress IP）治不了。要根治得改成排程預抓時刻表進 KV，
-設計草案見 [docs/prefetch-architecture.md](docs/prefetch-architecture.md)。
+重試只是止血，根因（共用 egress IP）治不了。根治的做法是排程預抓時刻表進 KV：
+GitHub Actions 每日抓一次整日時刻表、精簡編碼後寫進 KV，Worker 查詢時優先讀 KV，
+讀不到才即時打 TDX。設計與實作說明見
+[docs/prefetch-architecture.md](docs/prefetch-architecture.md)。
+
+> 排程需要先在 repo 設定四個 GitHub Secrets 才會生效，見上述文件。
 
 ---
 

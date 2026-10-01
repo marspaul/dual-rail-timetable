@@ -1,0 +1,41 @@
+name: 預抓時刻表進 KV
+
+# 排程放這裡而不是 Cloudflare Cron Trigger：Workers 免費方案的 Cron 只有
+# 10 ms CPU，光是 JSON.parse 一份 3.7 MB 的台鐵整日時刻表就遠遠超過。
+# 詳見 docs/prefetch-architecture.md。
+
+on:
+  schedule:
+    - cron: '30 18 * * *'   # UTC 18:30 = 台北 02:30
+  workflow_dispatch:         # 可手動觸發，第一次設定完用這個驗
+
+concurrency:
+  group: prefetch-timetable
+  cancel-in-progress: false
+
+jobs:
+  prefetch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: 抓取 TDX 並精簡編碼
+        env:
+          TDX_CLIENT_ID:     ${{ secrets.TDX_CLIENT_ID }}
+          TDX_CLIENT_SECRET: ${{ secrets.TDX_CLIENT_SECRET }}
+          DAYS: '8'
+          OUT:  ${{ runner.temp }}/kv-bulk.json
+        run: node scripts/prefetch-timetable.mjs
+
+      - name: 寫入 Cloudflare KV
+        working-directory: cloudflare-worker
+        env:
+          CLOUDFLARE_API_TOKEN:  ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npx --yes wrangler@4 kv bulk put --binding TOKEN_KV --remote "${{ runner.temp }}/kv-bulk.json"

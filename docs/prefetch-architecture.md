@@ -1,6 +1,6 @@
 # 排程預抓時刻表進 KV — 架構設計
 
-> 狀態：**讀取端已實作並上線；寫入端（排程）尚未實作**
+> 狀態：**讀寫兩端皆已實作。排程待設定 GitHub Secrets 後才會真正跑。**
 > 撰寫日期：2026-09-30
 
 現行架構每次查詢都即時代打 TDX API，會撞上 TDX 的限流（429）。這份文件說明改成「排程預抓進 KV」的做法、實測資料量、以及會卡住的地方。
@@ -150,7 +150,7 @@ export default {
 
 **⚠️ 這個方案需要 Workers 付費方案（$5/月）。** 免費方案的 Cron Trigger 只有 **10 ms CPU**，抓 6 MB JSON、parse、重新編碼一定遠遠超過。付費方案的 cron 有 30 秒，綽綽有餘。
 
-### 方案 B：GitHub Actions 當排程器（建議）
+### 方案 B：GitHub Actions 當排程器 — ✅ 已採用並實作
 
 本 repo 是公開的，GitHub Actions 對公開 repo 免費無上限。讓 Action 去抓 TDX、做完編碼，再用 Cloudflare REST API 寫進 KV，Worker 只負責讀。
 
@@ -162,6 +162,42 @@ export default {
 | 排程邏輯維護 | 混在 Worker 裡 | 獨立在 repo 裡 |
 
 方案 B 把重活移出 Cloudflare，Worker 的請求路徑只剩「讀一個約 16.5 KB 的桶」，穩穩在免費方案的 10 ms CPU 內。
+
+#### 實作
+
+| 檔案 | 作用 |
+|------|------|
+| [`scripts/prefetch-timetable.mjs`](../scripts/prefetch-timetable.mjs) | 抓 TDX 整日時刻表 → 精簡編碼 → 產出 bulk JSON |
+| [`.github/workflows/prefetch-timetable.yml`](../.github/workflows/prefetch-timetable.yml) | 每日 02:30（台北）排程，`workflow_dispatch` 可手動觸發 |
+
+寫入用 `wrangler kv bulk put` 而不是直接打 REST API —— CLI 的行為可以在本機
+當場驗證，不必賭 API 的欄位格式。
+
+#### 需要的 GitHub Secrets
+
+在 repo 的 **Settings → Secrets and variables → Actions** 加這四個：
+
+| Secret | 說明 |
+|--------|------|
+| `TDX_CLIENT_ID` | TDX 會員憑證，與 `wrangler secret` 裡那組相同 |
+| `TDX_CLIENT_SECRET` | 同上 |
+| `CLOUDFLARE_API_TOKEN` | 需要 **Workers KV Storage: Edit** 權限（Account 層級）|
+| `CLOUDFLARE_ACCOUNT_ID` | Cloudflare 儀表板右側可找到 |
+
+設定完後到 Actions 頁手動跑一次 **預抓時刻表進 KV** 驗證。
+
+#### 排程端的退避比 Worker 更有耐心
+
+Worker 那邊是使用者在等，退避總共 3.1 秒。排程沒人等，所以拉長成
+1 / 3 / 8 / 20 秒 —— GitHub runner 的對外 IP 一樣是共用的，照樣會中 429。
+
+部分日期失敗不會讓整個 job 失敗（既有 KV 資料與即時查詢頂著），
+只有**全部**失敗才回非零離開碼。
+
+#### Key 的過期
+
+每個 key 設 `expiration_ttl`，在服務日期過完的兩天後自然過期，
+不需要另外寫清理邏輯。
 
 即使全日只有 3.72 MB，`JSON.parse()` 一份 3.72 MB 的 JSON 仍遠超過 10 ms，所以**排程端無論如何都不能跑在免費方案的 Cron Trigger 上**。
 
@@ -274,12 +310,19 @@ node timetable-codec.test.mjs <樣本目錄>
 
 **往返驗證：27 個真實班次、697 個停靠站，還原後的 StationID 與到發時刻與原始資料全數一致。** 壓縮比 13.8x（台鐵）／15.5x（高鐵），優於原本 12x 的估算。
 
-### ⬜ 待實作
+### ✅ KV bulk put 的格式（2026-10-01 實測）
 
-- [ ] **寫入端（排程）** — 這是目前唯一缺的一塊。讀取端已就緒，只要有東西把
-      `tn:{rail}:{date}:{bucket}` 寫進 KV 就會自動生效，不需要再改 Worker。
+`wrangler kv bulk put` 吃的是 `[{key, value, expiration_ttl}, …]`。用合成資料
+實際寫入驗證過：TTL 300 秒 → key 的過期時間正好是五分鐘後，格式無誤（測完已清除）。
+
+日期與 TTL 運算也驗過：台北時區換算正確，跨月（10-31 → 11-01）與跨年
+（12-31 → 2027-01-01）都對。
 
 ### ⬜ 仍未驗證
+
+- [ ] **排程本身還沒真的跑過** — 需要先設好四個 GitHub Secrets。
+      腳本裡打 TDX 的那段在本機無法驗證（憑證在 wrangler secret 裡讀不出來），
+      要靠第一次 `workflow_dispatch` 手動觸發確認。
 
 - [ ] 各鐵路每日班次數是否隨日期大幅變動（只量了 2026-10-01 單日）。
 - [ ] 高鐵的壓縮比只取樣 7 個班次（台鐵 20 個），樣本偏小。
