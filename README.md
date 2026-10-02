@@ -60,7 +60,7 @@ TDX 的限制是每來源 IP 每秒 50 次，但 Worker 走 Cloudflare 共用 eg
 - 重試後仍失敗會回 429，前端顯示「TDX 流量限制，請稍後再試」
 
 重試只是止血，根因（共用 egress IP）治不了。根治的做法是排程預抓時刻表進 KV：
-GitHub Actions 每日抓一次整日時刻表、精簡編碼後寫進 KV，Worker 查詢時優先讀 KV，
+GitHub Actions 定期（台北週一／週五 00:00）抓整日時刻表、精簡編碼後寫進 KV，Worker 查詢時優先讀 KV，
 讀不到才即時打 TDX。設計與實作說明見
 [docs/prefetch-architecture.md](docs/prefetch-architecture.md)。
 

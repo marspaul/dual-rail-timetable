@@ -168,7 +168,7 @@ export default {
 | 檔案 | 作用 |
 |------|------|
 | [`scripts/prefetch-timetable.mjs`](../scripts/prefetch-timetable.mjs) | 抓 TDX 整日時刻表 → 精簡編碼 → 產出 bulk JSON |
-| [`.github/workflows/prefetch-timetable.yml`](../.github/workflows/prefetch-timetable.yml) | 每日 02:30（台北）排程，`workflow_dispatch` 可手動觸發 |
+| [`.github/workflows/prefetch-timetable.yml`](../.github/workflows/prefetch-timetable.yml) | 台北週一／週五 00:00 排程，`workflow_dispatch` 可手動觸發 |
 
 寫入用 `wrangler kv bulk put` 而不是直接打 REST API —— CLI 的行為可以在本機
 當場驗證，不必賭 API 的欄位格式。
@@ -198,6 +198,29 @@ Worker 那邊是使用者在等，退避總共 3.1 秒。排程沒人等，所�
 
 每個 key 設 `expiration_ttl`，在服務日期過完的兩天後自然過期，
 不需要另外寫清理邏輯。
+
+#### 執行頻率：為什麼是週一／週五，抓 7 天
+
+原本每天 02:30 跑一次，一天寫 242 筆 KV —— 佔免費額度（1,000 writes/day）的
+24%，而且其中 7 天的資料跟前一晚**完全相同**（實測連 byte 數都一樣），
+等於每天白寫約 210 筆。
+
+改成一週兩次後：
+
+| | 每天 | 週一＋週五 | 每週一次 |
+|---|---:|---:|---:|
+| KV 寫入／天（平均）| 242 | **~65** | ~32 |
+| TDX 請求／天（平均）| ~30 | **~7** | ~3.6 |
+| 資料新鮮度 | ≤1 天 | ≤4 天 | ≤7 天 |
+| 單次執行失敗 | 隔天補上 | **有重疊，不留洞** | 整週缺 |
+
+**抓 7 天但最長只隔 4 天是刻意的**：兩次執行的涵蓋範圍重疊，就算其中一次
+整個失敗，到下一次執行前都還有資料。每週一次的方案沒有這層保護 —— 每次
+執行本來就會有 1~2 個「日期×鐵路」組合因 429 失敗。
+
+重疊也吸收掉 GitHub 排程的誤點（實測遲到 4 小時 17 分）。
+
+cron 用星期而非 `*/4`：`*/4` 是「每月第 1,5,9… 日」，跨月時間隔會縮成 1~3 天。
 
 即使全日只有 3.72 MB，`JSON.parse()` 一份 3.72 MB 的 JSON 仍遠超過 10 ms，所以**排程端無論如何都不能跑在免費方案的 Cron Trigger 上**。
 

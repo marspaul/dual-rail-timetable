@@ -6,8 +6,14 @@ name: 預抓時刻表進 KV
 
 on:
   schedule:
-    - cron: '30 18 * * *'   # UTC 18:30 = 台北 02:30
-  workflow_dispatch:         # 可手動觸發，第一次設定完用這個驗
+    # 週日/週四 16:00 UTC = 台北週一/週五 00:00，間隔 4 天與 3 天。
+    # 不用 '*/4'：那是「每月第 1,5,9… 日」，跨月時間隔會縮成 1~3 天。
+    - cron: '0 16 * * 0,4'
+  workflow_dispatch:         # 手動觸發，排程漏跑或要立即更新時用
+
+# 抓 7 天但最長只隔 4 天，刻意讓兩次執行的涵蓋範圍重疊：
+# 就算其中一次整個失敗，到下一次執行前都還有資料可用。
+# GitHub 排程常誤點（實測遲到 4 小時 17 分），重疊也吸收掉這個誤差。
 
 concurrency:
   group: prefetch-timetable
@@ -29,7 +35,7 @@ jobs:
         env:
           TDX_CLIENT_ID:     ${{ secrets.TDX_CLIENT_ID }}
           TDX_CLIENT_SECRET: ${{ secrets.TDX_CLIENT_SECRET }}
-          DAYS: '8'
+          DAYS: '7'
           OUT:  ${{ runner.temp }}/kv-bulk.json
         run: node scripts/prefetch-timetable.mjs
 
