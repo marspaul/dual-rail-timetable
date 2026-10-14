@@ -1317,7 +1317,7 @@ async function fetchTra(dateVal, timeVal) {
       dur:  dur > 0 ? dur : dur + 1440,
       depMin: dh * 60 + dm,
       price: fareMap[fareKey] ?? null,
-      from: S.from.zh, to: S.to.zh,
+      from: S.from.zh, to: S.to.zh, date: dateVal,
       late: false, lateMin: 0,
       reserved: RESERVED_TYPES.some(t => typeName.includes(t)),
     };
@@ -1368,7 +1368,7 @@ async function fetchThsr(dateVal, timeVal) {
       dur:  dur > 0 ? dur : dur + 1440,
       depMin: dh * 60 + dm,
       price: thsrPrice,
-      from: S.from.zh, to: S.to.zh,
+      from: S.from.zh, to: S.to.zh, date: dateVal,
       late: false, lateMin: 0,
       reserved: true,
     };
@@ -1499,7 +1499,9 @@ async function showDetail(idx, cardEl) {
   // 停靠站：台鐵、高鐵都向 API 取實際停靠站（不再用硬編碼列表估算）
   const stopsEl = detail.querySelector(`#detail-stops-${idx}`);
   try {
-    const rows = await buildStopRows(t, $('#date-input').value);
+    // 用班次被查出來時的日期，不是輸入框當下的值 —— 使用者可能改了日期
+    // 但沒重新查詢，那樣會拿另一天的時刻表來配這張卡
+    const rows = await buildStopRows(t, t.date || $('#date-input').value);
     if (stopsEl) stopsEl.innerHTML = rows;
   } catch (e) {
     console.warn('[stops]', e);

@@ -187,11 +187,24 @@ async function getTraStationMap(env) {
  */
 async function idToName(env, rail) {
   if (!_idToName[rail] || Date.now() >= _idToNameExpiry[rail]) {
-    const base = invert(rail === 'thsr' ? THSR_STATIONS : await getTraStationMap(env));
+    // 先讀排程寫入的站名表。它是從時刻表本身抽出來的，而且與時刻表同一批
+    // 寫入 KV，所以解碼時刻表時一定夠用，不需要再碰站牌 API。
     let prefetched = null;
     try {
       prefetched = await env.TOKEN_KV?.get(NAMES_KV_KEY(rail), { type: 'json' });
-    } catch { /* 沒有就只用站牌表 */ }
+    } catch { /* 往下用站牌表補 */ }
+
+    // 站牌表只是後備。取它要打 TDX，而 TDX 正是預抓想避開的東西 ——
+    // 所以只在沒有預抓站名表時才取，而且失敗也不能讓整條 KV 快路陪葬。
+    let base = {};
+    if (rail === 'thsr') {
+      base = invert(THSR_STATIONS);
+    } else if (!prefetched || !Object.keys(prefetched).length) {
+      try {
+        base = invert(await getTraStationMap(env));
+      } catch { /* TDX 掛了或被限流：有多少用多少 */ }
+    }
+
     _idToName[rail]       = { ...base, ...prefetched };
     _idToNameExpiry[rail] = Date.now() + STATION_TTL_MS;
   }
@@ -213,7 +226,6 @@ async function stopsFromKv(env, rail, trainNo, date) {
 
     const train = decodeTrain(bucket, trainNo, await idToName(env, rail));
     if (!train?.StopTimes?.length) return null;
-
 
     const info = { TrainNo: train.TrainNo, Direction: train.Direction };
     return rail === 'tra'
